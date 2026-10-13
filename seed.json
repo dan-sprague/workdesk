@@ -1,0 +1,190 @@
+{
+ "projects": {
+  "aav-capsids": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "AAV Capsids",
+   "order": 2,
+   "status": "active",
+   "tier": "major"
+  },
+  "brain-mri": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "Brain MRI",
+   "order": 5,
+   "status": "active",
+   "tier": "standard"
+  },
+  "native-function": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "Native Function",
+   "order": 7,
+   "status": "active",
+   "tier": "standard"
+  },
+  "nh-paper": {
+   "context": "Repos at ~/Documents/Projects/Repos",
+   "deadline": "2026-10-31",
+   "goal": "Paper draft by end of October. Data harmonized; now doing analyses and simulating clinical trials from a disease progression model.",
+   "name": "Natural History Harmonization & Paper",
+   "order": 1,
+   "status": "active",
+   "tier": "major"
+  },
+  "pensieve": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "Pensieve",
+   "order": 6,
+   "status": "active",
+   "tier": "standard"
+  },
+  "rnaseq": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "RNAseq",
+   "order": 4,
+   "status": "active",
+   "tier": "standard"
+  },
+  "tox": {
+   "context": "",
+   "deadline": "",
+   "goal": "",
+   "name": "Tox",
+   "order": 3,
+   "status": "active",
+   "tier": "standard"
+  }
+ },
+ "items": {
+  "nh-01": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Calculate certainty of when or if someone crossed MRC 5 before they died"
+  },
+  "nh-02": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Get specific code for the Kendall tau test and review w/ Eric. Look at where disease fall relative to the 53 median"
+  },
+  "nh-03": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Implement this on Broad's Atlassian"
+  },
+  "nh-04": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Analysis of false positives in the NH vs NH randomized trial"
+  },
+  "nh-05": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "How long must a trial run to be declared futile in the context of our prion designs?"
+  },
+  "nh-06": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Composite endpoint in a basket trial for subtypes that do not have any MRC data"
+  },
+  "nh-07": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "todo",
+   "status": "open",
+   "text": "Expand on cis codon 129 in D178N"
+  },
+  "nh-08": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "doing",
+   "status": "open",
+   "text": "Detailed description of each trial model, including model specification and data being passed in"
+  },
+  "nh-09": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "doing",
+   "status": "open",
+   "text": "Disease model and trial visualization portal"
+  },
+  "nh-10": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "doing",
+   "status": "open",
+   "text": "1:1 individual matching (for draws from the posterior)"
+  },
+  "nh-11": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "doing",
+   "status": "open",
+   "text": "Analysis of high false positive rate on model posterior samples vs. actual NH patients"
+  },
+  "nh-12": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "doing",
+   "status": "open",
+   "text": "Full end-to-end data analysis pipeline"
+  },
+  "nh-13": {
+   "created": "2026-10-13T15:33:00Z",
+   "done_at": null,
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "review",
+   "status": "open",
+   "text": "Initial basket trial analysis"
+  },
+  "nh-14": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "review",
+   "status": "open",
+   "text": "Establish whether NPDPSC and TAPCJD can be connected at all"
+  },
+  "nh-15": {
+   "created": "2026-10-13T15:33:00Z",
+   "kind": "task",
+   "project": "nh-paper",
+   "stage": "review",
+   "status": "open",
+   "text": "Relationship between theta and HR over time in a clinical trial"
+  }
+ }
+}
