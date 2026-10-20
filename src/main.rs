@@ -2,17 +2,20 @@
 //!
 //!   desk                 open the Work Desk in your browser
 //!   desk app             open it in its own window (what Work Desk.app runs)
-//!   desk add "<note>"    file a sticky note (DeepSeek picks the project)
+//!   desk add "<note>"    file a sticky note (Work Desk picks the project)
+//!   desk new "<name>"    add a project, with its own git-tracked work folder
 //!   desk today           what needs doing today
-//!   desk brief           a start-of-day plan from DeepSeek
+//!   desk brief           a start-of-day plan
 //!   desk sort            file everything waiting in the Inbox
-//!   desk key <KEY>       save your DeepSeek API key
+//!   desk key <KEY>       save an API key (any supported service, or Jev)
 
 mod ai;
 mod config;
 #[cfg(target_os = "macos")]
 mod desktop;
 mod logic;
+mod project;
+mod provider;
 mod server;
 mod store;
 mod util;
@@ -49,7 +52,7 @@ enum Cmd {
     /// Open the Work Desk in its own window (this is what Work Desk.app runs)
     #[cfg(target_os = "macos")]
     App,
-    /// Add a sticky note; DeepSeek picks the project unless you pass --project
+    /// Add a sticky note; Work Desk picks the project unless you pass --project
     Add {
         /// Project id (see `desk projects`), or "inbox"
         #[arg(short, long)]
@@ -63,17 +66,40 @@ enum Cmd {
     },
     /// Show what needs doing today
     Today,
-    /// Ask DeepSeek for a start-of-day plan
+    /// Get a start-of-day plan
     Brief,
     /// File every note waiting in the Inbox
     Sort,
     /// List projects and their ids
     Projects,
-    /// Save your DeepSeek API key
-    Key {
-        /// The key, starting with sk-
-        key: String,
+    /// Add a project and create its work folder (a git repo) in ~/Documents/Projects/Repos
+    New {
+        /// The project's name, e.g. "CHARM IND"
+        #[arg(required = true, num_args = 1..)]
+        name: Vec<String>,
+        /// What the project is for (helps Work Desk file notes)
+        #[arg(short, long)]
+        goal: Option<String>,
+        /// Don't create a folder
+        #[arg(long)]
+        no_folder: bool,
     },
+    /// Save an API key. Work Desk works out which service it's for: DeepSeek, OpenAI,
+    /// Anthropic, Google Gemini, OpenRouter, or TypeSafe's Jev (checks which project a note fits)
+    Key {
+        /// The key
+        #[arg(required_unless_present = "forget")]
+        key: Option<String>,
+        /// Say which service instead of letting Work Desk work it out
+        /// (deepseek, openai, anthropic, gemini, openrouter, custom, jev)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Remove a saved key: "chat" or "jev"
+        #[arg(long, conflicts_with = "key")]
+        forget: Option<String>,
+    },
+    /// Use a different model from the same service, e.g. `desk model deepseek-reasoner`
+    Model { name: String },
     /// Keep your data in Google Drive (moves it to My Drive/WorkDesk/workdesk.json)
     Drive {
         /// Folder inside My Drive
@@ -141,7 +167,7 @@ fn switch_to(mut cfg: Config, dest: std::path::PathBuf, paint: &logic::Paint) ->
 fn need_ai(cfg: &Config, http: &reqwest::Client) -> Result<ai::Ai> {
     match ai::Ai::from_config(cfg, http) {
         Some(a) => Ok(a),
-        None => bail!("No DeepSeek key yet. Run `desk key <your key>` first."),
+        None => bail!("No API key yet. Run `desk key <your key>` first."),
     }
 }
 
@@ -192,7 +218,7 @@ fn run_app(rt: tokio::runtime::Runtime) -> Result<()> {
     let app = rt.block_on(async {
         let cfg = Config::load();
         let store = Arc::new(open_store(&cfg)?);
-        anyhow::Ok(server::App { store, cfg: Arc::new(RwLock::new(cfg)), http: ai::Ai::http_client(), picker: None })
+        anyhow::Ok(server::App { store, cfg: Arc::new(RwLock::new(cfg)), http: ai::http_client(), picker: None })
     })?;
     desktop::run(app, rt)
 }
@@ -200,7 +226,7 @@ fn run_app(rt: tokio::runtime::Runtime) -> Result<()> {
 async fn run(cmd: Cmd) -> Result<()> {
     let paint = logic::Paint::new(std::io::stdout().is_terminal());
     let cfg = Config::load();
-    let http = ai::Ai::http_client();
+    let http = ai::http_client();
 
     match cmd {
         #[cfg(target_os = "macos")]
@@ -253,7 +279,7 @@ async fn run(cmd: Cmd) -> Result<()> {
         Cmd::Brief => {
             let store = open_store(&cfg)?;
             let ai = need_ai(&cfg, &http)?;
-            eprintln!("{}", paint.dim("Asking DeepSeek…"));
+            eprintln!("{}", paint.dim("Thinking…"));
             let v = ai.brief(&store.list("projects")?, &store.list("items")?).await?;
             print_brief(&v, &paint);
         }
@@ -278,11 +304,49 @@ async fn run(cmd: Cmd) -> Result<()> {
                 println!("{line}");
             }
         }
-        Cmd::Key { key } => {
+        Cmd::Key { key, provider, forget } => {
             let mut cfg = cfg;
-            cfg.deepseek_key = Some(key.trim().to_string());
+            match (key, forget.as_deref()) {
+                (Some(key), _) => {
+                    eprintln!("{}", paint.dim("Checking the key…"));
+                    let (new, msg) = ai::connect(cfg, &http, &key, provider.as_deref()).await?;
+                    new.save()?;
+                    println!("{msg}");
+                }
+                (None, Some("jev")) => {
+                    cfg.jev_key = None;
+                    cfg.save()?;
+                    println!("Removed the Jev key.");
+                }
+                (None, Some("chat")) => {
+                    (cfg.api_key, cfg.provider, cfg.model, cfg.base_url) = (None, None, None, None);
+                    cfg.save()?;
+                    println!("Removed the chat model's key.");
+                }
+                _ => bail!("--forget takes \"chat\" or \"jev\""),
+            }
+        }
+        Cmd::Model { name } => {
+            let mut cfg = cfg;
+            cfg.model = Some(name.trim().to_string()).filter(|m| !m.is_empty());
             cfg.save()?;
-            println!("Saved. Notes will now be filed by DeepSeek ({}).", cfg.model());
+            match cfg.chat() {
+                Some(c) => println!("Work Desk will use {} from {}.", c.model, c.provider.name),
+                None => println!("Saved. Add a key with `desk key` to use it."),
+            }
+        }
+        Cmd::New { name, goal, no_folder } => {
+            let store = open_store(&cfg)?;
+            let mut doc = Map::new();
+            doc.insert("name".into(), json!(name.join(" ")));
+            if let Some(g) = goal {
+                doc.insert("goal".into(), json!(g));
+            }
+            let c = project::create(&store, &cfg, doc, !no_folder, &[])?;
+            println!("{} {}  {}", paint.bold("Added:"), logic::s(&c.doc, "name").unwrap_or(""), paint.cyan(&c.id));
+            if let Some(n) = c.notice {
+                println!("{n}");
+            }
         }
         Cmd::Export { file } => {
             let store = open_store(&cfg)?;
@@ -337,7 +401,13 @@ async fn run(cmd: Cmd) -> Result<()> {
             let (p, i) = store.counts();
             println!("Data file:  {}  ({p} projects, {i} tasks)", store.path().display());
             println!("Backups:    {}", config::backup_dir().display());
-            println!("Settings:   {}  (DeepSeek key stays here, not in the data file)", config::data_dir().join("config.json").display());
+            println!("Settings:   {}  (API keys stay here, not in the data file)", config::data_dir().join("config.json").display());
+            println!("Projects:   {}  (new project folders)", config::tilde(&cfg.projects_root()));
+            match cfg.chat() {
+                Some(c) => println!("AI:         {} · {}", c.provider.name, c.model),
+                None => println!("AI:         no key yet (desk key <your key>)"),
+            }
+            println!("Jev:        {}", if cfg.jev_key().is_some() { "on: checks which project each note fits" } else { "off" });
         }
     }
     Ok(())

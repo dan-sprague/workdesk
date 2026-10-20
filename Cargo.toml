@@ -2,7 +2,7 @@
 name = "workdesk"
 version = "0.2.0"
 edition = "2021"
-description = "Work Desk: projects, kanban, timeline and sticky notes, with DeepSeek filing"
+description = "Work Desk: projects, kanban, timeline and sticky notes, filed by the AI of your choice"
 
 [[bin]]
 name = "desk"

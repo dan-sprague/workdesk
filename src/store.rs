@@ -242,14 +242,20 @@ impl Store {
         self.save(&mut inner)
     }
 
-    /// Shallow-merge `patch` into an existing document. Returns None if it doesn't exist.
+    /// Shallow-merge `patch` into an existing document; a null value removes that field.
+    /// Returns None if the document doesn't exist.
     pub fn merge(&self, coll: &str, id: &str, patch: &Map<String, Value>) -> Result<Option<Map<String, Value>>> {
         check_collection(coll)?;
         let mut inner = self.inner.lock().unwrap();
         self.refresh(&mut inner);
         let Some(Value::Object(doc)) = inner.colls.get_mut(coll).unwrap().get_mut(id) else { return Ok(None) };
         for (k, v) in patch {
-            if k != "id" {
+            if k == "id" {
+                continue;
+            }
+            if v.is_null() {
+                doc.remove(k);
+            } else {
                 doc.insert(k.clone(), v.clone());
             }
         }
@@ -371,7 +377,9 @@ mod tests {
         let s = Store::open(&f, Some(d.join("backups"))).unwrap();
         assert!(s.is_empty());
         s.put("items", "t1", &doc(json!({"text":"a","updated":"2026-10-01T00:00:00Z"}))).unwrap();
-        s.merge("items", "t1", &doc(json!({"stage":"doing"}))).unwrap();
+        s.merge("items", "t1", &doc(json!({"stage":"doing","triage":{"reason":"x"}}))).unwrap();
+        s.merge("items", "t1", &doc(json!({"triage":null}))).unwrap();
+        assert!(s.get("items", "t1").unwrap().unwrap().get("triage").is_none());
         // reopen from disk
         let s2 = Store::open(&f, None).unwrap();
         assert_eq!(s2.get("items", "t1").unwrap().unwrap()["stage"], "doing");

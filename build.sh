@@ -57,6 +57,6 @@ fi
 
 echo
 echo "Next:"
-echo "  desk key sk-your-deepseek-key"
+echo "  desk key <your API key>                  # DeepSeek, OpenAI, Anthropic, Gemini, OpenRouter or Jev"
 echo "  open \"\$HOME/Applications/Work Desk.app\"   # the desktop app (or find Work Desk in Spotlight)"
 echo "  desk                                     # or the same thing in your browser"

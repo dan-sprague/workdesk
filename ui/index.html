@@ -392,6 +392,15 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .td-foot a.mini{text-decoration:none}
 .td-spacer{flex:1}
+.pf-check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted)}
+.pf-check code{font-family:var(--mono);font-size:.8rem}
+.ai-state{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
+.ai-state b{display:inline-block;min-width:92px}
+.ai-state .empty{display:inline;padding:0}
+.triage{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin-top:-4px}
+.triage-why{margin:0;font-size:.82rem;color:var(--muted)}
+.triage-by{font-family:var(--mono);font-size:.66rem;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
+.triage-acts{display:flex;flex-wrap:wrap;gap:6px}
 
 
 /* ---------- Responsive ---------- */
@@ -433,17 +442,18 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   <div id="desk-view" class="desk">
     <div class="desk-main">
       <section class="panel setup" id="ai-setup" hidden aria-labelledby="k-h">
-        <div class="panel-head"><h2 class="sec-h" id="k-h">Connect DeepSeek</h2></div>
-        <p class="alert-detail" style="margin:0">Paste your DeepSeek API key to have sticky notes filed automatically and to get a daily brief. The key is stored only on this computer.</p>
+        <div class="panel-head"><h2 class="sec-h" id="k-h">AI keys</h2><button class="mini" id="ai-close" type="button" hidden>Done</button></div>
+        <p class="alert-detail" style="margin:0">Paste an API key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter to have notes filed for you and to get a daily brief. Work Desk works out which service a key is for. Add a TypeSafe key as well and Jev will check whether each note really fits a project. Keys stay on this computer.</p>
+        <ul class="ai-state" id="ai-state"></ul>
         <form id="key-form" class="note-row">
-          <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off" aria-label="DeepSeek API key">
+          <input type="password" id="ai-key" placeholder="Paste an API key" autocomplete="off" aria-label="API key">
           <button class="btn" type="submit">Save key</button>
         </form>
         <p class="status" id="key-status" role="status"></p>
       </section>
       <section class="panel" aria-labelledby="br-h">
         <div class="panel-head"><h2 class="sec-h" id="br-h">Start of day</h2><button class="mini primary" id="brief-btn" type="button">Brief me</button></div>
-        <div id="brief-out"><p class="empty">Ask DeepSeek what to focus on today.</p></div>
+        <div id="brief-out"><p class="empty">Ask Work Desk what to focus on today.</p></div>
       </section>
       <section class="panel attention" id="attn-panel" aria-labelledby="a-h">
         <div class="panel-head"><h2 class="sec-h" id="a-h">Needs attention</h2><p class="label" id="attn-count"></p></div>
@@ -468,7 +478,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
             <button class="btn" type="submit" id="cap-btn">Add</button>
           </div>
         </form>
-        <p class="hint">“Sort it for me” lets DeepSeek pick the project and catch dates like “by Friday”. If it can’t tell, the note waits in the Inbox.</p>
+        <p class="hint">“Sort it for me” lets Work Desk pick the project and catch dates like “by Friday”. If no project clearly fits, the note waits in the Inbox with a suggestion.</p>
         <p class="status" id="cap-status" role="status"></p>
       </section>
       <section aria-labelledby="p-h" style="display:flex;flex-direction:column;gap:12px">
@@ -1001,7 +1011,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 
     const inbox=open.filter(i=>i.project==='inbox');
     let html='';
-    if(inbox.length) html+=`<article class="proj inbox"><div class="proj-head"><div class="proj-name"><h3>Inbox</h3></div><div class="meta"><span class="pill">${inbox.length} to sort</span><button class="mini primary" id="sort-inbox" type="button">Sort inbox</button></div></div><ul class="list">${inbox.map(i=>row(i,false)).join('')}</ul></article>`;
+    if(inbox.length) html+=`<article class="proj inbox"><div class="proj-head"><div class="proj-name"><h3>Inbox</h3></div><div class="meta"><span class="pill">${inbox.length} to sort</span><button class="mini primary" id="sort-inbox" type="button">Sort inbox</button></div></div><ul class="list">${inbox.map(inboxRow).join('')}</ul></article>`;
     if(editingProj==='new') html=projForm({})+html;
     for(const p of ordered()){
       if(editingProj===p.id){ html+=projForm(p); continue; }
@@ -1452,21 +1462,56 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   }
   function flash(id,msg){ $(id).textContent=msg; setTimeout(()=>{ if($(id).textContent===msg) $(id).textContent=''; },7000); }
 
-  let aiOn=false;
+  // aiOn: some AI can file notes. chatOn: a chat model, which the brief needs (Jev alone can't write one).
+  let aiOn=false, chatOn=false, keysOpen=false, projectsRoot='~/Documents/Projects/Repos';
   async function loadStatus(){
     try{
-      const s=await db.call('GET','/api/status'); aiOn=!!s.ai;
-      $('ai-setup').hidden=aiOn; $('brief-btn').disabled=!aiOn;
-      $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'');
-      if(!aiOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Connect DeepSeek above to get a daily brief.</p>';
+      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot;
+      $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
+      $('ai-state').innerHTML=`<li><b>Chat model</b> ${s.chat?`${esc(s.chat)} <button class="linkish" type="button" data-forget="chat">Remove</button>`:'<span class="empty">none yet</span>'}</li>`
+        +`<li><b>Jev</b> ${s.jev?'on: checks which project each note fits <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
+      $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
+        +` · <button class="linkish" type="button" id="ai-open">AI keys</button>`;
+      if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
   $('key-form').addEventListener('submit', async e=>{
     e.preventDefault();
     const key=$('ai-key').value.trim(); if(!key) return;
-    try{ await db.call('POST','/api/settings',{key}); $('ai-key').value=''; $('key-status').textContent='Saved.'; await loadStatus();
-      if(aiOn) $('brief-out').innerHTML='<p class="empty">Ask DeepSeek what to focus on today.</p>'; }
-    catch(err){ $('key-status').textContent='Could not save the key: '+err.message; }
+    keysOpen=true; $('key-status').textContent='Checking the key…';
+    try{ const r=await db.call('POST','/api/settings',{key}); $('ai-key').value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
+      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>'; }
+    catch(err){ $('key-status').textContent=err.message; }
+  });
+  document.addEventListener('click', async e=>{
+    if(e.target.closest('#ai-open')){ keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'nearest'}); $('ai-key').focus(); return; }
+    if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
+    const fg=e.target.closest('[data-forget]');
+    if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
+      catch(err){ $('key-status').textContent=err.message; } }
+  });
+
+  // ---- Inbox: notes that didn't clearly fit a project ----
+  function inboxRow(it){
+    const t=it.triage, base=row(it,false);
+    if(!t||!t.reason) return base;
+    const close=t.closest&&projOf(t.closest);
+    const acts=(t.suggest?`<button class="mini primary" type="button" data-tnew="${esc(it.id)}">Create “${esc(t.suggest)}”</button>`:`<button class="mini" type="button" data-tnew="${esc(it.id)}">New project…</button>`)
+      +(close?`<button class="mini" type="button" data-tfile="${esc(it.id)}" data-to="${esc(close.id)}">File under ${esc(close.name)}</button>`:'');
+    return base.replace(/<\/li>$/, `<div class="triage"><p class="triage-why">${esc(t.reason)}${t.by==='jev'?'<span class="triage-by" title="Jev made this call">Jev</span>':''}</p><div class="triage-acts">${acts}</div></div></li>`);
+  }
+  document.addEventListener('click', async e=>{
+    const n=e.target.closest('[data-tnew]');
+    if(n){
+      const it=items.find(i=>i.id===n.dataset.tnew); if(!it) return;
+      const name=it.triage?.suggest||'', key=name.toLowerCase();
+      // every waiting note with the same suggestion moves into the new project
+      const ids=key?items.filter(i=>i.project==='inbox' && i.status!=='done' && (i.triage?.suggest||'').toLowerCase()===key).map(i=>i.id):[it.id];
+      newProjectFrom(name, ids); return;
+    }
+    const f=e.target.closest('[data-tfile]');
+    if(f){ try{ await db.doc('items/'+f.dataset.tfile).update({project:f.dataset.to}); toast(`Filed under ${pName(f.dataset.to)}.`); }
+      catch(err){ toast('Could not move the note: '+err.message, true); } }
   });
 
   function renderBrief(v, when){
@@ -1478,7 +1523,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     if(v.quick_wins?.length) h+=`<p class="label">Quick wins</p><ul class="brief-list">${li(v.quick_wins)}</ul>`;
     if(v.first_step) h+=`<p class="brief-start"><b>Start here:</b> ${esc(v.first_step)}</p>`;
     if(when) h+=`<p class="brief-meta">Brief from ${esc(when)}</p>`;
-    $('brief-out').innerHTML=h||'<p class="empty">DeepSeek sent an empty brief. Try again.</p>';
+    $('brief-out').innerHTML=h||'<p class="empty">The brief came back empty. Try again.</p>';
   }
   function showCachedBrief(){
     try{ const c=JSON.parse(localStorage.getItem('wd-brief')||'null'); if(c && c.day===TODAY_ISO) renderBrief(c.v, c.at); }catch(_){}
@@ -1491,12 +1536,12 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
       renderBrief(v, at);
       try{ localStorage.setItem('wd-brief', JSON.stringify({day:TODAY_ISO, at, v})); }catch(_){}
     }catch(err){ $('brief-out').innerHTML=`<p class="warn">${esc(err.message)}</p>`; }
-    b.disabled=!aiOn; b.textContent='Brief me';
+    b.disabled=!chatOn; b.textContent='Brief me';
   });
 
   document.addEventListener('click', async e=>{
     const sb=e.target.closest('#sort-inbox'); if(!sb) return;
-    if(!aiOn){ $('cap-status').textContent='Connect DeepSeek first to sort the Inbox.'; return; }
+    if(!aiOn){ $('cap-status').textContent='Add an API key under AI keys to sort the Inbox.'; return; }
     sb.disabled=true; sb.textContent='Sorting…';
     try{ const r=await db.call('POST','/api/sort-inbox',{}); await db.refreshAll();
       flash('cap-status', `Filed ${r.moved} note${r.moved===1?'':'s'}. ${r.left} left in the Inbox.${r.error?' '+r.error:''}`); }
@@ -1504,7 +1549,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   });
 
   // ---- project editing ----
-  let editingProj=null, projDraft={};
+  let editingProj=null, projDraft={}, projMove=[];
   function projForm(p){
     const d={...p,...projDraft};
     const opt=(list,cur)=>list.map(t=>`<option value="${t}" ${cur===t?'selected':''}>${t}</option>`).join('');
@@ -1517,17 +1562,24 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
         <div class="field"><label for="pf-status">Status</label><select id="pf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
       </div>
       <div class="field"><label for="pf-context">Notes (repo, people, links)</label><input id="pf-context" name="context" value="${esc(d.context||'')}"></div>
+      ${p.id?'':`<label class="pf-check"><input type="checkbox" name="make_folder" ${d.make_folder===false?'':'checked'}> Create a project folder with a git repo in <code>${esc(projectsRoot)}</code></label>`}
+      ${!p.id&&projMove.length?`<p class="hint" style="margin:0">${projMove.length===1?'The Inbox note':`The ${projMove.length} Inbox notes`} that suggested it will move into the new project.</p>`:''}
       <div class="compose-row"><button class="btn" type="submit">${p.id?'Save':'Add project'}</button><button class="ghost" type="button" data-pcancel>Cancel</button></div>
     </form>`;
   }
-  function openProjForm(id){ editingProj=id; projDraft={}; renderDesk(); setTimeout(()=>$('pf-name')?.focus(),0); }
+  function openProjForm(id){ editingProj=id; projDraft={}; projMove=[]; renderDesk(); setTimeout(()=>$('pf-name')?.focus(),0); }
+  function newProjectFrom(name, ids){
+    editingProj='new'; projDraft={name}; projMove=ids; renderDesk();
+    setTimeout(()=>{ const f=$('proj-form'); f?.scrollIntoView({block:'nearest'}); $(name?'pf-goal':'pf-name')?.focus(); },0);
+  }
   $('new-proj').addEventListener('click',()=>openProjForm('new'));
   $('projects').addEventListener('click', e=>{
     const ed=e.target.closest('[data-pedit]'); if(ed){ openProjForm(ed.dataset.pedit); return; }
-    if(e.target.closest('[data-pcancel]')){ editingProj=null; projDraft={}; renderDesk(); }
+    if(e.target.closest('[data-pcancel]')){ editingProj=null; projDraft={}; projMove=[]; renderDesk(); }
   });
-  $('projects').addEventListener('input', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=e.target.value; });
-  $('projects').addEventListener('change', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=e.target.value; });
+  const draftVal=t=>t.type==='checkbox'?t.checked:t.value;
+  $('projects').addEventListener('input', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=draftVal(e.target); });
+  $('projects').addEventListener('change', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=draftVal(e.target); });
   $('projects').addEventListener('submit', async e=>{
     if(e.target.id!=='proj-form') return;
     e.preventDefault();
@@ -1537,8 +1589,12 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     const id=e.target.dataset.id;
     try{
       if(id) await db.doc('projects/'+id).update(data);
-      else await db.collection('projects').add({...data, order:Math.max(0,...projects.map(p=>p.order||0))+1});
-      editingProj=null; projDraft={}; renderDesk();
+      else{
+        const r=await db.collection('projects').add({...data, order:Math.max(0,...projects.map(p=>p.order||0))+1, make_folder:f.get('make_folder')==='on', move:projMove});
+        if(projMove.length) await db.refreshAll();
+        if(r?.notice) toast(r.notice, /^Couldn|^Didn|couldn/.test(r.notice));
+      }
+      editingProj=null; projDraft={}; projMove=[]; renderDesk();
     }catch(err){ $('cap-status').textContent='Could not save the project: '+err.message; }
   });
 

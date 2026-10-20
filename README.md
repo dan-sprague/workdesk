@@ -1,12 +1,13 @@
 # Work Desk
 
 Your projects, kanban board, timeline and sticky notes as a Mac app (**Work Desk.app**) and a `desk`
-command. DeepSeek files your notes into the right project and writes a start-of-day brief.
+command. Work Desk files your notes into the right project, tells you when a note doesn't fit any of them,
+writes a start-of-day brief, and gives every new project its own git-tracked work folder.
 
 Open it as its own window, or in your browser with `desk`. Either way it runs only on your computer.
 Everything — every project and task — is kept in one readable file, `workdesk.json`, which you can keep
-in Google Drive (see below). Nothing else leaves your Mac except the text sent to DeepSeek when it files
-a note or writes a brief.
+in Google Drive (see below). Nothing else leaves your Mac except the text sent to the AI service whose
+key you add, when Work Desk files a note or writes a brief.
 
 ## Install (once)
 
@@ -20,7 +21,7 @@ It installs the `desk` command and puts **Work Desk.app** in your Applications f
 Then:
 
 ```bash
-desk key sk-your-deepseek-key   # or paste it into the page
+desk key <your API key>   # or paste it under "AI keys" on the page
 ```
 
 and open **Work Desk** from Spotlight, Launchpad or Finder. Drag it to the Dock to keep it there.
@@ -39,8 +40,9 @@ in the other within a few seconds.
 - `desk app` opens the same window from the terminal.
 - After a `git pull`, run `./build.sh` again to update both the app and the `desk` command.
 - If the app can't read your data file, it says why in a dialog and quits instead of starting empty.
-- Apps opened from the Dock don't see variables set in your shell, so the app ignores `DEEPSEEK_API_KEY`
-  and `WORKDESK_FILE`. Use `desk key` and `desk drive` / `desk use-file`, which save to your settings.
+- Apps opened from the Dock don't see variables set in your shell, so the app ignores `WORKDESK_API_KEY`,
+  `TYPESAFE_API_KEY` and `WORKDESK_FILE`. Use `desk key` and `desk drive` / `desk use-file`, which save to
+  your settings.
 
 ## Keep it in Google Drive
 
@@ -60,7 +62,7 @@ Work Desk and run `desk drive` there too: it picks up the same file instead of s
 - If two computers save at nearly the same moment, Drive may create a conflict copy such as
   `workdesk (1).json`. Fold it back in with `desk merge "<path to the copy>"`. For each task and project,
   the most recently changed version is kept.
-- Your DeepSeek key is **not** in the synced file. Each Mac keeps its own key in
+- Your API keys are **not** in the synced file. Each Mac keeps its own keys in
   `~/Library/Application Support/WorkDesk/config.json`.
 - A dated backup of the data is saved locally once a day in `~/Library/Application Support/WorkDesk/backups/`.
 - `desk where` shows which file is in use.
@@ -93,17 +95,19 @@ running; it notices the change.
 |---|---|
 | `desk` | Opens the Work Desk in your browser (leave the terminal window open) |
 | `desk app` | Opens it in its own window, like Work Desk.app |
-| `desk add "tox plots for Sonia by Friday"` | Files a sticky note; DeepSeek picks the project and the due date |
+| `desk add "tox plots for Sonia by Friday"` | Files a sticky note; Work Desk picks the project and the due date |
 | `desk add -p nh "check MRC 5 crossing code"` | Files it under a project yourself (an id or part of a name) |
 | `desk today` | What's overdue, due soon, stalled and next, in the terminal |
-| `desk brief` | DeepSeek's plan for today |
+| `desk brief` | A plan for today |
 | `desk sort` | Files everything waiting in the Inbox |
 | `desk projects` | Lists projects and their ids |
+| `desk new "CHARM IND" -g "IND package"` | Adds a project and creates its work folder (`--no-folder` to skip) |
+| `desk key <key>` | Saves an API key; Work Desk works out which service it's for |
 | `desk drive` | Moves your data into Google Drive and uses it from there |
 | `desk use-file "<path>"` | Uses a data file in any other folder |
 | `desk merge "<file>"` | Folds in another copy (e.g. a Drive conflict copy), newest edits win |
 | `desk export backup.json` / `desk import backup.json` | Backups |
-| `desk where` | Shows the data file, backups and settings locations |
+| `desk where` | Shows the data file, backups, settings, project folder and AI in use |
 
 On the page:
 - **Desk**: Start of day (Brief me), Needs attention, Today, Next up, the sticky note, and your projects.
@@ -129,18 +133,70 @@ Tasks and projects can point at the real work: scripts, drafts, figures, data fo
 - Unlinking removes the link only. Work Desk never moves, changes or deletes the file itself.
 - For safety, Work Desk will only open a file that something in your data actually links to.
 
-“Sort it for me” in any note box sends the note to DeepSeek. If it can't tell where a note goes, or there's
-no key yet, the note waits in the Inbox.
+## Filing notes
+
+“Sort it for me” in any note box sends the note to the AI. It tidies the wording, catches dates like
+“by Friday”, and decides whether the note clearly belongs to one of your projects. Sharing a topic isn't
+enough: a note about CHARM's off-target analysis doesn't belong to RNAseq just because RNAseq also does
+off-target work.
+
+When no project clearly fits, the note waits in the **Inbox** with the reason, and two buttons:
+
+- **Create “CHARM IND”**: opens the new-project form with the suggested name. Saving it creates the
+  project (and its folder) and moves every waiting note with the same suggestion into it.
+- **File under RNAseq**: when there's a close match, files it there anyway.
+
+**Sort inbox** re-checks everything waiting there. With no key yet, notes simply wait in the Inbox.
+
+### Jev (optional)
+
+Add a [TypeSafe](https://typesafe.ai) key as well and Jev makes the project call. Jev doesn't write text;
+it picks from your projects plus “none of these” and says how sure it is. When it's less than 50% sure
+(`JEV_MIN_CONFIDENCE` in `src/ai.rs`) the note waits in the Inbox. The chat model still tidies the wording,
+finds the date and suggests the new project's name. A Jev key on its own files notes but can't write the
+brief.
+
+## New projects get a work folder
+
+**+ New project**, `desk new`, and **Create “…”** in the Inbox all create
+`~/Documents/Projects/Repos/<project-name>/`, make it a git repo with a first commit, and link it as the
+project folder:
+
+```
+charm-ind/
+├── README.md        name, goal and people, from the project
+├── CLAUDE.md        the same context, for Claude Code
+├── .gitignore       keeps data/ and output/ out of git
+├── data/            raw inputs (not committed)
+├── src/             reusable code
+├── scripts/         one-off analyses
+├── output/          generated results (not committed)
+├── display_items/   figures and tables
+├── drafts/          manuscripts, IND sections, reports
+└── notes/           meeting notes
+```
+
+If a folder with that name already exists, Work Desk links it and leaves its contents alone. Untick
+**Create a project folder** (or use `desk new --no-folder`) for projects that don't need one.
 
 ## Settings
 
-- Key: `desk key …`, or set `DEEPSEEK_API_KEY`, which takes precedence.
-- Model: defaults to `deepseek-chat`. To change it, edit `model` in
-  `~/Library/Application Support/WorkDesk/config.json`.
-- Port: `desk open --port 8080`.
+- **API key**: paste one under **AI keys** (the link at the bottom of the page) or run `desk key <key>`.
+  Work Desk works out which service it's for (DeepSeek, OpenAI, Anthropic, Google Gemini, OpenRouter,
+  or TypeSafe for Jev), checks it works, and picks a sensible model. You can have one chat key and one Jev
+  key. `desk key --forget chat` or `--forget jev` removes one.
+- **Model**: `desk model <name>` uses a different model from the same service.
+- **Another OpenAI-compatible service**: set `base_url` and `model` in
+  `~/Library/Application Support/WorkDesk/config.json`, then `desk key --provider custom <key>`.
+- **Project folders**: set `projects_root` in the same file to create them somewhere other than
+  `~/Documents/Projects/Repos`.
+- **Environment**: `WORKDESK_API_KEY` and `TYPESAFE_API_KEY` override the saved keys (terminal only).
+- **Port**: `desk open --port 8080`.
 
 ## Notes
 
+- Releases are tagged `v0.1.0`, `v0.2.0`, … on `main`; `CHANGELOG.md` says what changed. New work happens
+  on a branch and is merged when it's done.
 - This copy is separate from the Work Desk page on claude.ai. Changes here don't show up there.
 - The browser version's server only answers on `localhost` and rejects requests from other websites.
   The desktop app doesn't open a port at all: its window talks to Work Desk directly.

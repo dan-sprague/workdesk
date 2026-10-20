@@ -3,6 +3,7 @@
 
 use crate::ai::{self, Ai};
 use crate::config::{expand_home, tilde, Config};
+use crate::project;
 use crate::store::{check_collection, Store, COLLECTIONS};
 use crate::util::now_iso;
 use anyhow::Result;
@@ -94,9 +95,12 @@ async fn index() -> impl IntoResponse {
 
 async fn status(State(app): State<App>) -> Json<Value> {
     let cfg = app.cfg.read().unwrap();
+    let chat = cfg.chat();
     Json(json!({
-        "ai": cfg.key().is_some(),
-        "model": cfg.model(),
+        "ai": chat.is_some() || cfg.jev_key().is_some(),
+        "chat": chat.as_ref().map(|c| format!("{} · {}", c.provider.name, c.model)),
+        "jev": cfg.jev_key().is_some(),
+        "projects_root": tilde(&cfg.projects_root()),
         "data_file": app.store.path().display().to_string(),
         "data_error": app.store.last_error(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -125,18 +129,33 @@ async fn create(State(app): State<App>, Path(coll): Path<String>, Json(body): Js
         }
         return Ok(Json(out));
     }
-    doc.remove("id");
-    doc.insert("created".into(), json!(now_iso()));
-    doc.insert("updated".into(), json!(now_iso()));
-    let id = app.store.new_id("p");
-    app.store.put(&coll, &id, &doc)?;
-    Ok(Json(with_id(&id, doc)))
+    // New projects get their own work folder unless the page says otherwise.
+    let make_folder = doc.remove("make_folder").and_then(|v| v.as_bool()).unwrap_or(true);
+    let moves: Vec<String> = doc
+        .remove("move")
+        .and_then(|v| v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
+        .unwrap_or_default();
+    let cfg = app.cfg.read().unwrap().clone();
+    let store = app.store.clone();
+    let c = tokio::task::spawn_blocking(move || project::create(&store, &cfg, doc, make_folder, &moves))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| bad(&e.to_string()))?;
+    let mut out = with_id(&c.id, c.doc);
+    if let Some(n) = c.notice {
+        out["notice"] = json!(n);
+    }
+    Ok(Json(out))
 }
 
 async fn update(State(app): State<App>, Path((coll, id)): Path<(String, String)>, Json(body): Json<Value>) -> ApiResult {
     check_collection(&coll).map_err(|e| ApiError(StatusCode::NOT_FOUND, e.to_string()))?;
     let Value::Object(mut patch) = body else { return Err(bad("Expected a JSON object")) };
     patch.entry("updated").or_insert(json!(now_iso()));
+    // A note moved by hand no longer needs the Inbox's "where does this go" hint.
+    if coll == "items" && patch.contains_key("project") {
+        patch.entry("triage").or_insert(Value::Null);
+    }
     match app.store.merge(&coll, &id, &patch)? {
         Some(doc) => Ok(Json(with_id(&id, doc))),
         None => Err(ApiError(StatusCode::NOT_FOUND, format!("No {coll} with id {id}"))),
@@ -150,33 +169,41 @@ async fn remove(State(app): State<App>, Path((coll, id)): Path<(String, String)>
 }
 
 async fn sort_inbox(State(app): State<App>) -> ApiResult {
-    let ai = app.ai().ok_or_else(|| bad("Add your DeepSeek key first."))?;
+    let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
     let (moved, left, err) = ai::sort_inbox(&app.store, &ai).await?;
     Ok(Json(json!({ "moved": moved, "left": left, "error": err })))
 }
 
 async fn brief(State(app): State<App>) -> ApiResult {
-    let ai = app.ai().ok_or_else(|| bad("Add your DeepSeek key first."))?;
+    let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
     let projects = app.store.list("projects")?;
     let items = app.store.list("items")?;
     let v = ai.brief(&projects, &items).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(v))
 }
 
+/// Paste any key: Work Desk works out which service it's for, checks it, and saves it.
+/// Also `{"forget": "jev"}` or `{"forget": "chat"}`, and `{"model": "..."}`.
 async fn settings(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
-    let mut cfg = app.cfg.write().unwrap();
+    let mut message = None;
     if let Some(k) = body.get("key").and_then(|v| v.as_str()) {
-        let k = k.trim();
-        if k.is_empty() {
-            return Err(bad("The key is empty."));
-        }
-        cfg.deepseek_key = Some(k.to_string());
+        let cfg = app.cfg.read().unwrap().clone();
+        let forced = body.get("provider").and_then(|v| v.as_str()).filter(|p| !p.is_empty());
+        let (new, msg) = ai::connect(cfg, &app.http, k, forced).await.map_err(|e| bad(&e.to_string()))?;
+        *app.cfg.write().unwrap() = new;
+        message = Some(msg);
+    }
+    let mut cfg = app.cfg.write().unwrap();
+    match body.get("forget").and_then(|v| v.as_str()) {
+        Some("jev") => cfg.jev_key = None,
+        Some("chat") => (cfg.api_key, cfg.provider, cfg.model, cfg.base_url) = (None, None, None, None),
+        _ => {}
     }
     if let Some(m) = body.get("model").and_then(|v| v.as_str()) {
         cfg.model = Some(m.trim().to_string()).filter(|m| !m.is_empty());
     }
     cfg.save()?;
-    Ok(Json(json!({ "ai": cfg.key().is_some(), "model": cfg.model() })))
+    Ok(Json(json!({ "message": message })))
 }
 
 // ---------------- linked files ----------------
@@ -420,7 +447,7 @@ pub async fn serve(app: App, port: u16, open_browser: bool) -> Result<()> {
     println!("Work Desk is running at {url}");
     println!("Data file: {}", app.store.path().display());
     if app.ai().is_none() {
-        println!("Tip: run `desk key <your DeepSeek key>` (or paste it on the page) to turn on auto-filing.");
+        println!("Tip: run `desk key <your API key>` (or paste it on the page) to have notes filed for you.");
     }
     println!("Press Ctrl+C to stop.");
     if open_browser {

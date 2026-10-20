@@ -1,5 +1,5 @@
 //! Shared task logic: stages, staleness, and the text summaries used by the
-//! terminal commands and by the prompts sent to DeepSeek.
+//! terminal commands and by the prompts sent to the AI.
 
 use crate::store::Doc;
 use crate::util::*;
@@ -121,7 +121,7 @@ pub fn next_steps<'a>(projects: &[Doc], items: &'a [Doc]) -> Vec<(String, &'a Do
     out
 }
 
-/// Project list given to DeepSeek when filing a note.
+/// Project list given to the chat model when filing a note.
 pub fn classify_context(projects: &[Doc], items: &[Doc]) -> String {
     let mut out = String::new();
     for (pid, p) in ordered(projects) {
@@ -148,7 +148,22 @@ pub fn classify_context(projects: &[Doc], items: &[Doc]) -> String {
     out
 }
 
-/// Full picture of open work, given to DeepSeek for the daily brief.
+/// One project in a sentence or two, for Jev's list of options.
+pub fn project_summary(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> String {
+    let mut out = s(p, "name").unwrap_or(pid).to_string();
+    for (k, label) in [("goal", "Goal"), ("context", "Context")] {
+        if let Some(v) = s(p, k) {
+            out.push_str(&format!(". {label}: {v}"));
+        }
+    }
+    let tasks: Vec<&str> = items.iter().filter(|(_, m)| s(m, "project") == Some(pid)).filter_map(|(_, m)| s(m, "text")).take(6).collect();
+    if !tasks.is_empty() {
+        out.push_str(&format!(". Tasks: {}", tasks.join("; ")));
+    }
+    out.chars().take(900).collect()
+}
+
+/// Full picture of open work, given to the chat model for the daily brief.
 pub fn brief_context(projects: &[Doc], items: &[Doc]) -> String {
     let today = today_days();
     let mut out = format!("Today is {} {}.\n\n", weekday_name(today), iso_from_days(today));
