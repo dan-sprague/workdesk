@@ -9,6 +9,7 @@
     clip:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 4.6L5.9 9.3a1.4 1.4 0 002 2l5-5a2.8 2.8 0 00-4-4l-5 5a4.2 4.2 0 006 6l4-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
     open:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    check:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.6l3 3 6.6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
   const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
   let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
@@ -361,7 +362,8 @@
         ${dlgDelete?`<span class="warn">Delete this task for good?</span><button type="button" class="mini danger" data-tdel-yes>Delete</button><button type="button" class="mini" data-tdel-no>Keep it</button>`:`<button type="button" class="ghost danger" data-tdel>Delete task</button>`}
         <span class="td-spacer"></span>
         ${p?`<a class="mini" href="${pageHref(p.id)}" data-tclose>Project page</a>`:''}
-        <button type="button" class="btn" data-tclose>Done</button>
+        <button type="button" class="ghost" data-tclose>Close</button>
+        ${it.status==='done'?'<button type="button" class="mini" data-treopen>Reopen</button>':`<button type="button" class="btn done-btn" data-tdone>${ICON.check}Mark done</button>`}
       </div></div>`; });
   }
   // Jev's judgments kept on a task (sized when the brief runs): its size, and whether it looks stuck.
@@ -408,6 +410,15 @@
   dlg.addEventListener('click', async e=>{
     if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
     if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
+    const td=e.target.closest('[data-tdone]');
+    if(td){
+      // close first: the dialog sits above everything, confetti included
+      const r=td.getBoundingClientRect(), id=dlgId;
+      lastPointer={x:r.left+r.width/2, y:r.top+r.height/2, t:Date.now()};
+      td.classList.add('pressed'); setTimeout(()=>{ dlg.close(); moveTo(id,'done'); }, 120);
+      return;
+    }
+    if(e.target.closest('[data-treopen]')){ moveTo(dlgId,'todo'); return; }
     const pd=e.target.closest('[data-pdraft]');
     if(pd){
       const id=dlgId, fresh=!!pd.dataset.fresh; await saveDlgText();

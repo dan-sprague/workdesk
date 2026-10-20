@@ -398,6 +398,16 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .td-prompt .meta{display:flex;align-items:center;gap:10px}
 .pp-stale{margin:0;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:.85rem}
+.confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1000} /* under the toast */
+.done-btn{display:inline-flex;align-items:center;gap:7px;padding-inline:18px;font-weight:700;transition:transform .12s cubic-bezier(.3,1.6,.5,1),box-shadow .2s}
+.done-btn svg{width:16px;height:16px}
+.done-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.done-btn:active,.done-btn.pressed{transform:scale(.92)}
+.card-nav .card-done{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface);color:var(--muted);font-weight:800;font-size:.8rem;line-height:1;cursor:pointer;transition:transform .12s cubic-bezier(.3,1.6,.5,1),background .15s,color .15s,border-color .15s}
+.card-nav .card-done:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);transform:scale(1.12)}
+.card-nav .card-done:active{transform:scale(.88)}
+.row input[type=checkbox]:checked{animation:tick-pop .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes tick-pop{0%{transform:scale(.6)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
 .pf-check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted)}
 .pf-check code{font-family:var(--mono);font-size:.8rem}
 .key-block{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
@@ -606,6 +616,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     clip:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 4.6L5.9 9.3a1.4 1.4 0 002 2l5-5a2.8 2.8 0 00-4-4l-5 5a4.2 4.2 0 006 6l4-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
     open:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     x:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    check:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.6l3 3 6.6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   };
   const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
   let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
@@ -958,7 +969,8 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
         ${dlgDelete?`<span class="warn">Delete this task for good?</span><button type="button" class="mini danger" data-tdel-yes>Delete</button><button type="button" class="mini" data-tdel-no>Keep it</button>`:`<button type="button" class="ghost danger" data-tdel>Delete task</button>`}
         <span class="td-spacer"></span>
         ${p?`<a class="mini" href="${pageHref(p.id)}" data-tclose>Project page</a>`:''}
-        <button type="button" class="btn" data-tclose>Done</button>
+        <button type="button" class="ghost" data-tclose>Close</button>
+        ${it.status==='done'?'<button type="button" class="mini" data-treopen>Reopen</button>':`<button type="button" class="btn done-btn" data-tdone>${ICON.check}Mark done</button>`}
       </div></div>`; });
   }
   // Jev's judgments kept on a task (sized when the brief runs): its size, and whether it looks stuck.
@@ -1005,6 +1017,15 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   dlg.addEventListener('click', async e=>{
     if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
     if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
+    const td=e.target.closest('[data-tdone]');
+    if(td){
+      // close first: the dialog sits above everything, confetti included
+      const r=td.getBoundingClientRect(), id=dlgId;
+      lastPointer={x:r.left+r.width/2, y:r.top+r.height/2, t:Date.now()};
+      td.classList.add('pressed'); setTimeout(()=>{ dlg.close(); moveTo(id,'done'); }, 120);
+      return;
+    }
+    if(e.target.closest('[data-treopen]')){ moveTo(dlgId,'todo'); return; }
     const pd=e.target.closest('[data-pdraft]');
     if(pd){
       const id=dlgId, fresh=!!pd.dataset.fresh; await saveDlgText();
@@ -1055,6 +1076,110 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     linkFiles(f.dataset.target, [v]);
   });
 
+
+  // ================= Finishing a task =================
+  // Local app only: build_ui.py inserts this into the page's script, after project.js.
+  // Confetti from wherever you clicked plus two side cannons, a short chime, and a count of
+  // today's wins. Clearing a project, or 5 or 10 in a day, gets a bigger show. Reduced motion
+  // gets a small burst; the footer's Sound toggle silences the chime.
+  let lastPointer=null;
+  const notePointer=e=>{ lastPointer={x:e.clientX, y:e.clientY, t:Date.now()}; };
+  document.addEventListener('pointerdown', notePointer, true);
+  document.addEventListener('drop', notePointer, true);
+
+  const soundOn=()=>{ try{ return localStorage.getItem('wd-sound')!=='off'; }catch(_){ return true; } };
+  function setSound(on){ try{ localStorage.setItem('wd-sound', on?'on':'off'); }catch(_){} }
+
+  // A soft pop, then a rising arpeggio (C E G C, plus a high E for big moments).
+  function chime(big){
+    if(!soundOn()) return;
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      const ac=chime.ac||(chime.ac=new AC());
+      if(ac.state==='suspended') ac.resume();
+      const t0=ac.currentTime+0.02, out=ac.createGain();
+      out.gain.value=0.16; out.connect(ac.destination);
+      const len=Math.floor(ac.sampleRate*0.05), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,4);
+      const pop=ac.createBufferSource(), pg=ac.createGain(); pop.buffer=buf; pg.gain.value=0.6;
+      pop.connect(pg); pg.connect(out); pop.start(t0);
+      const notes=big?[523.25,659.25,783.99,1046.5,1318.5]:[523.25,659.25,783.99,1046.5];
+      notes.forEach((f,i)=>{
+        const o=ac.createOscillator(), g=ac.createGain(), t=t0+0.04+i*0.075;
+        o.type='triangle'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(1,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);
+        o.connect(g); g.connect(out); o.start(t); o.stop(t+0.6);
+      });
+    }catch(_){}
+  }
+
+  const CONFETTI=['#4b3fd6','#9d94ff','#ff5d8f','#ff8a3d','#ffd93d','#3ddc97','#38bdf8','#f472b6','#ffffff'];
+  function drawStar(ctx, r){
+    ctx.beginPath();
+    for(let i=0;i<10;i++){ const a=i*Math.PI/5-Math.PI/2, rr=i%2?r*0.45:r; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
+    ctx.closePath(); ctx.fill();
+  }
+  function confetti(x, y, big){
+    const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const W=innerWidth, H=innerHeight, dpr=Math.min(2, window.devicePixelRatio||1);
+    const c=document.createElement('canvas'); c.className='confetti'; c.width=W*dpr; c.height=H*dpr;
+    document.body.appendChild(c);
+    const ctx=c.getContext('2d'); ctx.scale(dpr,dpr);
+    const parts=[];
+    const add=(x0,y0,n,angle,spread,speed,lift=0)=>{
+      for(let i=0;i<n;i++){
+        // speeds start near zero so a burst fills in rather than making a ring; `lift` throws it upward first
+        const a=angle+(Math.random()-0.5)*spread, v=speed*(0.12+Math.pow(Math.random(),0.6)*0.95), r=Math.random();
+        parts.push({x:x0, y:y0, vx:Math.cos(a)*v, vy:Math.sin(a)*v-lift, w:7+Math.random()*8, h:9+Math.random()*11,
+          rot:Math.random()*6.28, vrot:(Math.random()-0.5)*0.35, tilt:Math.random()*6.28, vtilt:0.06+Math.random()*0.12,
+          color:CONFETTI[(Math.random()*CONFETTI.length)|0], shape:r<0.22?'circle':r<0.34?'star':'rect', life:0, max:150+Math.random()*110});
+      }
+    };
+    const up=-Math.PI/2, start=performance.now();
+    if(reduce) add(x, y, 36, up, Math.PI*1.1, 7);
+    else{
+      add(x, y, big?400:280, up, Math.PI*2, big?24:20, big?9:7);
+      const side=Math.min(36, 20+H/45)*(big?1.12:1);
+      setTimeout(()=>{ add(-10, H*0.95, big?240:170, -Math.PI/3.1, 0.6, side); add(W+10, H*0.95, big?240:170, -Math.PI+Math.PI/3.1, 0.6, side); }, 140);
+      if(big) setTimeout(()=>add(W/2, -30, 320, Math.PI/2, Math.PI*0.95, 10), 500);
+    }
+    let last=start;
+    function frame(now){
+      const dt=Math.min(2.5,(now-last)/16.67); last=now;
+      ctx.clearRect(0,0,W,H);
+      for(let i=parts.length-1;i>=0;i--){
+        const p=parts[i];
+        p.life+=dt;
+        p.vx*=Math.pow(0.986,dt); p.vy=p.vy*Math.pow(0.986,dt)+0.3*dt;
+        p.x+=p.vx*dt+Math.sin(p.tilt)*0.7; p.y+=p.vy*dt; p.rot+=p.vrot*dt; p.tilt+=p.vtilt*dt;
+        const alpha=Math.min(1,(p.max-p.life)/45);
+        if(alpha<=0 || p.y>H+40){ parts.splice(i,1); continue; }
+        ctx.save(); ctx.globalAlpha=alpha; ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.scale(1,Math.cos(p.tilt)); ctx.fillStyle=p.color;
+        if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,p.w/2,0,6.29); ctx.fill(); }
+        else if(p.shape==='star') drawStar(ctx, p.w*0.85);
+        else ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      }
+      if(parts.length || now-start<700) requestAnimationFrame(frame); else c.remove();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const CHEERS=['Done!','Nailed it.','One less thing.','Crossed off.','Shipped.','That’s a win.','Boom.','Look at you go.','Off your plate.'];
+  // `it` is the task as it was before it was marked done.
+  function celebrate(it){
+    const at=(lastPointer && Date.now()-lastPointer.t<4000)?lastPointer:{x:innerWidth/2, y:innerHeight*0.45};
+    const doneToday=items.filter(i=>i.status==='done' && i.done_at && isoOf(i.done_at)===TODAY_ISO).length;
+    const proj=it.project && it.project!=='inbox' ? projOf(it.project) : null;
+    const cleared=proj && !items.some(i=>i.project===proj.id && i.status!=='done');
+    const milestone=doneToday===5 || doneToday===10 || (doneToday>10 && doneToday%5===0);
+    const big=!!(cleared || milestone);
+    confetti(at.x, at.y, big);
+    chime(big);
+    const cheer=CHEERS[(Math.random()*CHEERS.length)|0];
+    const count=`${doneToday} done today.`;
+    toast(cleared ? `Every task in ${proj.name} is done! ${count}` : milestone ? `${doneToday} done today. You’re on a roll!` : `${cheer} ${count}`);
+  }
 
   function row(it, showProj, extra){
     return `<li class="row" data-drop="items:${esc(it.id)}"><input type="checkbox" id="cb-${esc(it.id)}" data-id="${esc(it.id)}" aria-label="Mark done"><label class="txt" for="cb-${esc(it.id)}"><span>${esc(it.text)}</span>${showProj?tag(it.project):''}</label><span class="row-end">${fileCount(it)}${extra||dueChip(it.due)}<button class="row-open" type="button" data-open="${esc(it.id)}" aria-label="Open details and files" title="Details and files">${ICON.open}</button></span></li>`;
@@ -1122,7 +1247,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
         ${(cardTags??filter==='all')?tag(it.project):''}
         ${dueChip(it.due)}
         ${staleInfo(it)!==null?`<span class="chip soon" title="No changes in ${staleInfo(it)} days">idle ${staleInfo(it)}d</span>`:''}
-        <span class="card-nav">
+        <span class="card-nav">${st!=='done'?`<button class="card-done" data-done="${esc(it.id)}" aria-label="Mark done" title="Mark done">✓</button>`:''}
           <button data-id="${esc(it.id)}" data-to="${STAGE_IDS[i-1]||''}" ${i<=0?'disabled':''} aria-label="Move to ${i>0?STAGES[i-1].label:''}">‹</button>
           <button data-id="${esc(it.id)}" data-to="${STAGE_IDS[i+1]||''}" ${i>=STAGE_IDS.length-1?'disabled':''} aria-label="Move to ${i<STAGE_IDS.length-1?STAGES[i+1].label:''}">›</button>
         </span>
@@ -1196,7 +1321,8 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     if(!db || !STAGE_IDS.includes(stage)) return;
     const now=new Date().toISOString();
     const patch = stage==='done' ? {stage:'done', status:'done', done_at:now, updated:now} : {stage, status:'open', done_at:null, updated:now};
-    try{ await db.doc('items/'+id).update(patch); }
+    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update(patch); if(stage==='done' && was && was.status!=='done') celebrate(was); }
     catch(err){ $('cap-status').textContent='Could not move that card. Try again in a moment.'; }
   }
 
@@ -1235,7 +1361,8 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     if(e.target?.type!=='checkbox' || !e.target.dataset.id) return;
     const id=e.target.dataset.id; if(!id||!db) return;
     e.target.disabled=true;
-    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); }
+    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); if(was) celebrate(was); }
     catch(err){ e.target.checked=false; e.target.disabled=false; $('cap-status').textContent='Could not save that change. Try again in a moment.'; }
   });
 
@@ -1561,7 +1688,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
       $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
       if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
       $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
-        +` · <button class="linkish" type="button" data-ai-open>AI keys</button>`;
+        +` · <button class="linkish" type="button" data-ai-open>AI keys</button> · <button class="linkish" type="button" data-sound>${soundOn()?'Sound on':'Sound off'}</button>`;
       if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
@@ -1589,6 +1716,10 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
       setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
     }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
+    const snd=e.target.closest('[data-sound]');
+    if(snd){ setSound(!soundOn()); snd.textContent=soundOn()?'Sound on':'Sound off'; if(soundOn()) chime(false); return; }
+    const dn=e.target.closest('[data-done]');
+    if(dn){ dn.disabled=true; moveTo(dn.dataset.done, 'done'); return; }
     const fg=e.target.closest('[data-forget]');
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
       catch(err){ $('key-status').textContent=err.message; } }

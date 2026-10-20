@@ -219,7 +219,7 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
       $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
       if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
       $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
-        +` · <button class="linkish" type="button" data-ai-open>AI keys</button>`;
+        +` · <button class="linkish" type="button" data-ai-open>AI keys</button> · <button class="linkish" type="button" data-sound>${soundOn()?'Sound on':'Sound off'}</button>`;
       if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
@@ -247,6 +247,10 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
       setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
     }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
+    const snd=e.target.closest('[data-sound]');
+    if(snd){ setSound(!soundOn()); snd.textContent=soundOn()?'Sound on':'Sound off'; if(soundOn()) chime(false); return; }
+    const dn=e.target.closest('[data-done]');
+    if(dn){ dn.disabled=true; moveTo(dn.dataset.done, 'done'); return; }
     const fg=e.target.closest('[data-forget]');
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
       catch(err){ $('key-status').textContent=err.message; } }
@@ -441,10 +445,11 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
   render();
   (async()=>{""")
 
-# ---- project pages, task details and linked files (ui/project.js, ui/project.css) ----
+# ---- project pages, task details, linked files and finishing tasks (ui/project.js, celebrate.js, project.css) ----
 here = os.path.dirname(os.path.abspath(__file__))
 PROJECT_JS = open(os.path.join(here, "project.js"), encoding="utf-8").read()
 PROJECT_CSS = open(os.path.join(here, "project.css"), encoding="utf-8").read()
+CELEBRATE_JS = open(os.path.join(here, "celebrate.js"), encoding="utf-8").read()
 
 rep("  <!-- TIMELINE VIEW -->", """  <!-- PROJECT PAGE -->
   <div id="proj-view" hidden></div>
@@ -458,7 +463,19 @@ rep(".proj-form .field input:not([type=date]){width:100%}\n",
     ".proj-form .field input:not([type=date]){width:100%}\n\n" + PROJECT_CSS)
 # the code goes in early, so its constants exist before anything renders
 rep("  const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };\n",
-    "  const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };\n\n" + PROJECT_JS)
+    "  const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };\n\n" + PROJECT_JS + "\n" + CELEBRATE_JS)
+
+# ---- finishing a task: confetti wherever a task becomes done (ui/celebrate.js) ----
+rep("""    try{ await db.doc('items/'+id).update(patch); }
+    catch(err){ $('cap-status').textContent='Could not move that card. Try again in a moment.'; }""",
+    """    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update(patch); if(stage==='done' && was && was.status!=='done') celebrate(was); }
+    catch(err){ $('cap-status').textContent='Could not move that card. Try again in a moment.'; }""")
+rep("""    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); }""",
+    """    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); if(was) celebrate(was); }""")
+rep('<span class="card-nav">',
+    '<span class="card-nav">${st!==\'done\'?`<button class="card-done" data-done="${esc(it.id)}" aria-label="Mark done" title="Mark done">✓</button>`:\'\'}')
 # cards: click for details, file chips, drop target
 rep("""<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}">""",
     """<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}" data-drop="items:${esc(it.id)}">""")

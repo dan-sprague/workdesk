@@ -116,3 +116,13 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
 .td-prompt .meta{display:flex;align-items:center;gap:10px}
 .pp-stale{margin:0;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:.85rem}
+.confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1000} /* under the toast */
+.done-btn{display:inline-flex;align-items:center;gap:7px;padding-inline:18px;font-weight:700;transition:transform .12s cubic-bezier(.3,1.6,.5,1),box-shadow .2s}
+.done-btn svg{width:16px;height:16px}
+.done-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.done-btn:active,.done-btn.pressed{transform:scale(.92)}
+.card-nav .card-done{width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface);color:var(--muted);font-weight:800;font-size:.8rem;line-height:1;cursor:pointer;transition:transform .12s cubic-bezier(.3,1.6,.5,1),background .15s,color .15s,border-color .15s}
+.card-nav .card-done:hover{background:var(--accent);border-color:var(--accent);color:var(--accent-fg);transform:scale(1.12)}
+.card-nav .card-done:active{transform:scale(.88)}
+.row input[type=checkbox]:checked{animation:tick-pop .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes tick-pop{0%{transform:scale(.6)}60%{transform:scale(1.25)}100%{transform:scale(1)}}

@@ -119,6 +119,10 @@ On the page:
 - **Project pages**: click a project name on the Desk to open its own page — overview, its four lanes,
   notes, linked files and what's coming up. Each page has its own address (`#/p/<project id>`).
 - **Task details**: click any card, or the **›** button on a Desk row, for notes, dates, stage and files.
+- **Finishing a task**: **Mark done** in task details, the ✓ on a Board card, a Desk checkbox, or dragging
+  to Done. Confetti bursts from where you clicked, cannons fire from both corners, a short chime plays,
+  and you get a count of today's wins. Clearing a project, or 5 or 10 in a day, gets a bigger show.
+  **Sound on/off** is at the bottom of the page; reduced motion (System Settings) gets a small burst.
 
 ## Linking files
 
@@ -248,5 +252,5 @@ If a folder with that name already exists, Work Desk links it and leaves its con
   The desktop app doesn't open a port at all: its window talks to Work Desk directly.
 - To change the app icon, edit and rerun `macos/make_icon.py` (needs Pillow).
 - `ui/index.html` is generated from `ui/source.html` (the claude.ai page) by `ui/build_ui.py`, which
-  also splices in `ui/project.js` and `ui/project.css` (project pages, task details and linked files).
-  Edit those three files, not `index.html`.
+  also splices in `ui/project.js`, `ui/celebrate.js` and `ui/project.css` (project pages, task details,
+  linked files, and the confetti). Edit those files, not `index.html`.
