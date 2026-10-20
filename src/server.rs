@@ -169,6 +169,22 @@ async fn remove(State(app): State<App>, Path((coll, id)): Path<(String, String)>
     Ok(Json(json!({ "deleted": found })))
 }
 
+/// Where Work Desk would file a note, without saving it: the page asks you to confirm first.
+async fn suggest(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let text = body.get("text").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).ok_or_else(|| bad("The note is empty."))?;
+    let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys to get suggestions."))?;
+    let projects = app.store.list("projects")?;
+    let items = app.store.list("items")?;
+    let f = ai.file_note(text, &projects, &items).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(json!({
+        "project": f.project,
+        "text": f.text,
+        "due": f.due,
+        "triage": f.triage.map(|t| t.to_json()),
+        "warning": f.warning,
+    })))
+}
+
 async fn sort_inbox(State(app): State<App>) -> ApiResult {
     let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
     let (moved, left, err) = ai::sort_inbox(&app.store, &ai).await?;
@@ -419,6 +435,7 @@ pub fn router(app: App) -> Router {
         .route("/api/status", get(status))
         .route("/api/rev", get(rev))
         .route("/api/settings", post(settings))
+        .route("/api/suggest", post(suggest))
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
         .route("/api/prompt", post(draft_prompt))

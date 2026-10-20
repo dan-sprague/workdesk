@@ -7,9 +7,12 @@ Releases are tagged `vX.Y.Z` on `main`.
 - **Any API key.** Paste a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter (or a
   TypeSafe key for Jev) and Work Desk works out which service it's for, checks it and picks a model.
   `desk key`, `desk model`, and **AI keys** on the page. Settings from 0.2 carry over.
-- **Fit check.** A note that only shares a topic with a project now waits in the Inbox with the reason,
+- **Confirm before filing.** “Sort it for me” suggests a project and waits for you to confirm or change
+  it (and the tidied text and due date) before saving.
+- **Fit check.** A note that only shares a topic with a project goes to the Inbox with the reason,
   a suggested new project and the closest existing one, with buttons to create the project or file it
   anyway. With a Jev key, Jev's calibrated pick makes the project call.
+- Notes sent to a project you chose yourself are tidied into a task too, with the date caught.
 - **Project work folders.** New projects get `~/Documents/Projects/Repos/<name>` with a standard
   research layout, set up as a git repo with a first commit. `desk new`.
 - **Prompts for Claude.** Draft, edit and copy a Claude Code prompt from any task; open the project

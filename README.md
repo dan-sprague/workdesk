@@ -96,7 +96,7 @@ running; it notices the change.
 |---|---|
 | `desk` | Opens the Work Desk in your browser (leave the terminal window open) |
 | `desk app` | Opens it in its own window, like Work Desk.app |
-| `desk add "tox plots for Sonia by Friday"` | Files a sticky note; Work Desk picks the project and the due date |
+| `desk add "tox plots for Sonia by Friday"` | Files a sticky note; Work Desk picks the project and the due date (no confirm step in the terminal) |
 | `desk add -p nh "check MRC 5 crossing code"` | Files it under a project yourself (an id or part of a name) |
 | `desk today` | What's overdue, due soon, stalled and next, in the terminal |
 | `desk brief` | A plan for today |
@@ -142,7 +142,14 @@ Tasks and projects can point at the real work: scripts, drafts, figures, data fo
 enough: a note about CHARM's off-target analysis doesn't belong to RNAseq just because RNAseq also does
 off-target work.
 
-When no project clearly fits, the note waits in the **Inbox** with the reason, and two buttons:
+Nothing is saved until you confirm. A small window shows the tidied task, the suggested project and the
+due date; change any of them, then press Enter (**File under …**) or **Cancel** to go back to the note.
+When no project clearly fits, it says why, picks the Inbox, and can start the project it suggests.
+
+Choosing a project yourself skips the question, but the note is still tidied into a task and its date
+caught. Your original wording is kept with the task either way.
+
+Notes waiting in the **Inbox** show the reason, and two buttons:
 
 - **Create “CHARM IND”**: opens the new-project form with the suggested name. Saving it creates the
   project (and its folder) and moves every waiting note with the same suggestion into it.

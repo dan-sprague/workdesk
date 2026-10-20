@@ -47,24 +47,30 @@ rep("([...bsel.options].some(o=>o.value===bcur)?bcur:'inbox')",
     "([...bsel.options].some(o=>o.value===bcur)?bcur:'auto')")
 rep("const project = filter!=='all' ? filter : ($('lane-proj')?.value || 'inbox');",
     "const project = filter!=='all' ? filter : ($('lane-proj')?.value || 'auto');")
-rep("    await db.collection('items').add(doc);\n", "    return await db.collection('items').add(doc);\n")
+# "Sort it for me": Work Desk suggests where a note goes and you confirm before it's saved
+rep("    await db.collection('items').add(doc);\n", """    let newProject=null;
+    if(project==='auto'){ const c=await confirmFiling(text); if(!c) return null; Object.assign(doc, c.doc); newProject=c.newProject; }
+    const r=await db.collection('items').add(doc);
+    if(newProject) startProjectFor(newProject, r.id);
+    return r;
+""")
 rep("""      await db.collection('items').add({text, project:$('cap-proj').value, status:'open', stage:'todo', kind:'task', created:new Date().toISOString()});
       $('cap-text').value=''; $('cap-status').textContent='Added.';
       setTimeout(()=>{ if($('cap-status').textContent==='Added.') $('cap-status').textContent=''; },2500);
     }catch(err){ $('cap-status').textContent= err?.code==='quota_exceeded'?'The tracker is full. Ask Claude to clear out old items.':'Could not add the note. Try again in a moment.'; }""",
-    """      $('cap-status').textContent= $('cap-proj').value==='auto' ? 'Filing…' : '';
-      const r=await db.collection('items').add({text, project:$('cap-proj').value, status:'open', stage:'todo', kind:'task', created:new Date().toISOString()});
-      $('cap-text').value=''; flash('cap-status', filedMsg(r));
+    """      $('cap-status').textContent= $('cap-proj').value==='auto' ? 'Reading the note…' : 'Saving…';
+      const r=await addItem(text, $('cap-proj').value, 'todo');
+      if(r){ $('cap-text').value=''; flash('cap-status', filedMsg(r)); } else $('cap-status').textContent='';
     }catch(err){ $('cap-status').textContent='Could not add the note: '+err.message; }""")
 rep("""      await addItem(text, $('bcap-proj').value, 'todo');
       $('bcap-text').value=''; $('bcap-status').textContent='';
     }catch(err){ $('bcap-status').textContent= err?.code==='quota_exceeded'?'The tracker is full. Ask Claude to clear out old items.':'Could not add the note. Try again in a moment.'; }""",
-    """      $('bcap-status').textContent= $('bcap-proj').value==='auto' ? 'Filing…' : '';
+    """      $('bcap-status').textContent= $('bcap-proj').value==='auto' ? 'Reading the note…' : 'Saving…';
       const r=await addItem(text, $('bcap-proj').value, 'todo');
-      $('bcap-text').value=''; flash('bcap-status', filedMsg(r));
+      if(r){ $('bcap-text').value=''; flash('bcap-status', filedMsg(r)); } else $('bcap-status').textContent='';
     }catch(err){ $('bcap-status').textContent='Could not add the note: '+err.message; }""")
 rep("try{ draft=''; await addItem(text, project, stage); renderBoard(); }",
-    "try{ draft=''; const r=await addItem(text, project, stage); renderBoard(); if(project==='auto') flash('bcap-status', filedMsg(r)); }")
+    "try{ draft=''; const r=await addItem(text, project, stage); if(!r) draft=text; renderBoard(); if(r) flash('bcap-status', filedMsg(r)); }")
 
 # ---- Desk: setup box, brief, sort inbox, project editing ----
 rep('    <div class="desk-main">\n',
@@ -131,6 +137,11 @@ rep("@media (max-width:620px){.tl{--lw:150px}}", """@media (max-width:620px){.tl
 .triage-why{margin:0;font-size:.82rem;color:var(--muted)}
 .triage-by{font-family:var(--mono);font-size:.66rem;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
 .triage-acts{display:flex;flex-wrap:wrap;gap:6px}
+.fdlg{width:min(560px,calc(100vw - 32px))}
+.fd-why{margin:0;font-size:.92rem;color:var(--muted)}
+.fd-why b{color:var(--fg)}
+.fd-orig summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.fd-orig p{margin:6px 0 0;font-size:.85rem;color:var(--muted);white-space:pre-wrap}
 """)
 
 # ---- local backend + new behaviour ----
@@ -201,6 +212,66 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
       catch(err){ $('key-status').textContent=err.message; } }
   });
+
+  // ---- "Sort it for me": suggest, then confirm ----
+  // Nothing is saved until you press File. The dialog also works with no AI: pick the project yourself.
+  let fdSug=null, fdNote='', fdResolve=null;
+  const goLabel=pid=>pid==='inbox'?'Put in the Inbox':`File under ${pName(pid)}`;
+  async function confirmFiling(text){
+    let s;
+    try{ s=await db.call('POST','/api/suggest',{text}); }
+    catch(err){ s={project:'inbox', text, due:null, error:err.message}; }
+    const r=await askWhere(s, text); if(!r) return null;
+    const doc={text:r.text, project:r.project, tidy:false};
+    if(r.text!==text) doc.original=text;
+    if(r.due) doc.due=r.due;
+    if(r.project==='inbox' && s.triage) doc.triage=s.triage;
+    return {doc, newProject:r.newProject||null};
+  }
+  function askWhere(s, note){
+    fdSug=s; fdNote=note;
+    const d=$('file-dlg'), t=s.triage;
+    const why= s.error?`<p class="warn" style="margin:0">${esc(s.error)} Choose a project yourself.</p>`
+      : t?`<p class="fd-why">${esc(t.reason)}${t.by==='jev'?'<span class="triage-by" title="Jev made this call">Jev</span>':''}</p>`
+      : `<p class="fd-why">Work Desk suggests <b>${esc(pName(s.project))}</b>.${s.warning?` ${esc(s.warning)}`:''}</p>`;
+    d.innerHTML=`<form class="td-body" id="fd-form">
+      <div class="td-head"><h3 class="sec-h">Where does this go?</h3><button type="button" class="icon-btn close" data-fdcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${why}
+      <textarea id="fd-text" class="td-title" rows="2" aria-label="Task">${esc(s.text||note)}</textarea>
+      ${(s.text||note)!==note?`<details class="fd-orig"><summary>Your note as typed</summary><p>${esc(note)}</p></details>`:''}
+      <div class="ed-grid td-fields">
+        <div class="field"><label for="fd-proj">Project</label><select id="fd-proj"><option value="inbox">Inbox</option>${ordered().map(p=>`<option value="${esc(p.id)}" ${p.id===s.project?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="fd-due">Due</label><input type="date" id="fd-due" value="${esc(s.due||'')}"></div>
+      </div>
+      ${t?.suggest?`<div><button type="button" class="mini" data-fdnew>New project: “${esc(t.suggest)}”</button></div>`:''}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-fdcancel>Cancel</button><button type="submit" class="btn" id="fd-go">${esc(goLabel(s.project))}</button></div>
+    </form>`;
+    d.showModal(); setTimeout(()=>$('fd-go')?.focus(),0);
+    return new Promise(res=>{ fdResolve=res; });
+  }
+  function finishFiling(extra){
+    const res=fdResolve; fdResolve=null;
+    const text=$('fd-text').value.trim()||fdNote;
+    $('file-dlg').close();
+    res?.({text, project:$('fd-proj').value, due:$('fd-due').value||null, ...extra});
+  }
+  // Start the project an Inbox note suggested, moving every note that suggested the same name.
+  function startProjectFor(name, id){
+    if(view!=='desk') setView('desk');
+    const key=name.toLowerCase();
+    const ids=items.filter(i=>i.project==='inbox' && i.status!=='done' && (i.triage?.suggest||'').toLowerCase()===key).map(i=>i.id);
+    if(!ids.includes(id)) ids.push(id);
+    newProjectFrom(name, ids);
+  }
+  const fdlg=$('file-dlg');
+  fdlg.addEventListener('submit', e=>{ e.preventDefault(); finishFiling({}); });
+  fdlg.addEventListener('click', e=>{
+    if(e.target===fdlg || e.target.closest('[data-fdcancel]')){ fdlg.close(); return; }
+    if(e.target.closest('[data-fdnew]')){ $('fd-proj').value='inbox'; finishFiling({newProject:fdSug.triage.suggest}); }
+  });
+  fdlg.addEventListener('change', e=>{ if(e.target.id==='fd-proj') $('fd-go').textContent=goLabel(e.target.value); });
+  fdlg.addEventListener('keydown', e=>{ if(e.target.id==='fd-text' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); fdlg.querySelector('form').requestSubmit(); } });
+  fdlg.addEventListener('close', ()=>{ if(fdResolve){ const res=fdResolve; fdResolve=null; res(null); } });
 
   // ---- Inbox: notes that didn't clearly fit a project ----
   function inboxRow(it){
@@ -320,6 +391,7 @@ PROJECT_CSS = open(os.path.join(here, "project.css"), encoding="utf-8").read()
 rep("  <!-- TIMELINE VIEW -->", """  <!-- PROJECT PAGE -->
   <div id="proj-view" hidden></div>
   <dialog id="task-dlg" class="tdlg" aria-label="Task details"></dialog>
+  <dialog id="file-dlg" class="tdlg fdlg" aria-label="Where does this note go?"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="drop-hint" id="drop-hint" hidden></div>
 

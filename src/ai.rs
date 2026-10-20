@@ -94,7 +94,25 @@ struct JevPick {
     ranked: Vec<(String, f64)>,
 }
 
-const FILE_SYSTEM: &str = "You file quick sticky notes into a researcher's project tracker.\n\
+/// How a note becomes a task, shared by filing and by tidying a note whose project is already chosen.
+macro_rules! rewrite_rules {
+    () => {
+        "Rewrite the note as one short, concrete task in the user's own words. Keep names, numbers, gene and \
+variant names, and technical terms exactly as written. Drop filler such as 'remember to' or 'I need to'. \
+Remove the deadline phrase from the task text once you have captured it as a date.\n\
+If the note implies a deadline ('by Friday', 'next Tuesday', 'end of the month', 'tomorrow'), convert it \
+to an ISO date relative to today. A bare weekday means the next occurrence of that day on or after today. \
+Otherwise use null.\n"
+    };
+}
+
+const TIDY_SYSTEM: &str = concat!(
+    "You turn a quick sticky note into a task for a researcher's project tracker. The project is already chosen.\n",
+    rewrite_rules!(),
+    "Respond with a JSON object only: {\"task\": string, \"due\": string or null}."
+);
+
+const FILE_SYSTEM: &str = concat!("You file quick sticky notes into a researcher's project tracker.\n\
 First decide whether the note belongs to one of the listed projects. It belongs to a project only if it is \
 about that project's own work: its named study, paper, collaborators, data or deliverables. Sharing a topic or \
 method is not enough; a note about off-target analysis does not belong to a project just because that project \
@@ -106,15 +124,11 @@ Set fit to \"clear\" when one project obviously fits, \"unsure\" when it could b
 topical, and \"none\" when no project fits. Set project_id to the closest project's id even when unsure, or \
 \"inbox\" if none is close. Unless fit is \"clear\", set new_project to a short name (2 to 4 words, using names \
 from the note) for the project it seems to belong to, or null if it is a stray to-do. Set reason to one short \
-sentence naming the words that decided it.\n\
-Rewrite the note as one short, concrete task in the user's own words. Keep names, numbers, gene and \
-variant names, and technical terms exactly as written. Drop filler such as 'remember to' or 'I need to'. \
-Remove the deadline phrase from the task text once you have captured it as a date.\n\
-If the note implies a deadline ('by Friday', 'next Tuesday', 'end of the month', 'tomorrow'), convert it \
-to an ISO date relative to today. A bare weekday means the next occurrence of that day on or after today. \
-Otherwise use null.\n\
-Respond with a JSON object only: {\"project_id\": string, \"fit\": \"clear\" | \"unsure\" | \"none\", \
-\"reason\": string, \"new_project\": string or null, \"task\": string, \"due\": string or null}.";
+sentence naming the words that decided it.\n",
+    rewrite_rules!(),
+    "Respond with a JSON object only: {\"project_id\": string, \"fit\": \"clear\" | \"unsure\" | \"none\", \
+\"reason\": string, \"new_project\": string or null, \"task\": string, \"due\": string or null}."
+);
 
 const JEV_INSTRUCTIONS: &str = "Which of this researcher's projects is the note about? Choose a project only if \
 the note is about that project's own work (its study, paper, collaborators, data or deliverables), not merely \
@@ -229,6 +243,15 @@ impl Chat {
         }
         let trimmed = content.trim().trim_start_matches("```json").trim_start_matches("```").trim_end_matches("```").trim();
         serde_json::from_str(trimmed).map_err(|_| anyhow!("{name}'s reply wasn't valid JSON"))
+    }
+
+    /// Tidy a note into a task for a project that's already chosen: (task, due).
+    async fn tidy(&self, note: &str, project: &str) -> Result<(Option<String>, Option<String>)> {
+        let today = today_days();
+        let user = format!("Today is {} {}.\nProject: {project}\nNote: \"{}\"", weekday_name(today), iso_from_days(today), note.replace('"', "'"));
+        let v = self.chat_json(TIDY_SYSTEM, &user, 300).await?;
+        let f = read_filing(&v, &[]);
+        Ok((f.task, f.due))
     }
 
     async fn file(&self, note: &str, projects: &[Doc], items: &[Doc]) -> Result<ChatFiling> {
@@ -448,7 +471,9 @@ pub struct Captured {
 }
 
 /// Create an item. When `project` is "auto", Work Desk chooses the project
-/// (falling back to the Inbox with a notice if it can't).
+/// (falling back to the Inbox with a notice if it can't). When the project is already
+/// chosen, the chat model still tidies the note into a task, unless `tidy: false`
+/// says the text has already been through it (the page's confirm step).
 pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>) -> Result<Captured> {
     let now = now_iso();
     let text = logic::s(&doc, "text").map(str::trim).unwrap_or("").to_string();
@@ -456,8 +481,25 @@ pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>
         bail!("The note is empty.");
     }
     doc.insert("text".into(), json!(text));
+    let tidy = doc.remove("tidy").and_then(|v| v.as_bool()).unwrap_or(true);
     let mut notice = None;
-    if logic::s(&doc, "project").map_or(true, |p| p == "auto") {
+    let chosen = logic::s(&doc, "project").filter(|p| *p != "auto").map(str::to_string);
+    if let (Some(pid), true, Some(chat)) = (&chosen, tidy, ai.and_then(|a| a.chat.as_ref())) {
+        let projects = store.list("projects")?;
+        match chat.tidy(&text, &logic::project_name(&projects, pid)).await {
+            Ok((task, due)) => {
+                if let Some(t) = task.filter(|t| *t != text) {
+                    doc.insert("text".into(), json!(t));
+                    doc.insert("original".into(), json!(text));
+                }
+                if let (Some(d), None) = (due, logic::s(&doc, "due")) {
+                    doc.insert("due".into(), json!(d));
+                }
+            }
+            Err(e) => notice = Some(format!("Saved as typed. {e}")),
+        }
+    }
+    if chosen.is_none() {
         doc.insert("project".into(), json!("inbox"));
         match ai {
             None => notice = Some("Saved to the Inbox. Add an API key under AI keys to have notes filed for you.".into()),
