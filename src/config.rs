@@ -31,6 +31,9 @@ pub struct Config {
     /// Where new project folders are created.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projects_root: Option<String>,
+    /// The Mac app that "Open in editor" uses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<String>,
     /// Settings from 0.2 and earlier; moved into `api_key` on load.
     #[serde(default, skip_serializing)]
     deepseek_key: Option<String>,
@@ -165,6 +168,10 @@ impl Config {
     /// The Jev key, if any. `TYPESAFE_API_KEY` wins over the saved key.
     pub fn jev_key(&self) -> Option<String> {
         env("TYPESAFE_API_KEY").or_else(|| clean(&self.jev_key))
+    }
+
+    pub fn editor(&self) -> String {
+        clean(&self.editor).unwrap_or_else(|| "Visual Studio Code".into())
     }
 
     pub fn projects_root(&self) -> PathBuf {

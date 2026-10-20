@@ -1,6 +1,7 @@
 //! Shared task logic: stages, staleness, and the text summaries used by the
 //! terminal commands and by the prompts sent to the AI.
 
+use crate::config::expand_home;
 use crate::store::Doc;
 use crate::util::*;
 use serde_json::{Map, Value};
@@ -161,6 +162,109 @@ pub fn project_summary(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> Stri
         out.push_str(&format!(". Tasks: {}", tasks.join("; ")));
     }
     out.chars().take(900).collect()
+}
+
+/// A linked path as Claude Code will see it from the project folder.
+fn from_folder(path: &str, folder: Option<&str>) -> String {
+    if let Some(f) = folder.map(|f| f.trim_end_matches('/')) {
+        if path == f {
+            return ".".into();
+        }
+        if let Some(rest) = path.strip_prefix(f).and_then(|r| r.strip_prefix('/')) {
+            return rest.to_string();
+        }
+    }
+    path.to_string()
+}
+
+fn file_paths(m: &Map<String, Value>) -> Vec<&str> {
+    m.get("files").and_then(Value::as_array).map(|a| a.iter().filter_map(|f| f["path"].as_str()).collect()).unwrap_or_default()
+}
+
+/// What's at the top of the project folder, e.g. "data/, drafts/, README.md".
+fn folder_listing(folder: &str) -> Option<String> {
+    let mut names: Vec<String> = std::fs::read_dir(expand_home(folder))
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            (!n.starts_with('.')).then(|| if e.path().is_dir() { format!("{n}/") } else { n })
+        })
+        .collect();
+    names.sort();
+    names.truncate(60);
+    Some(names.join(", "))
+}
+
+/// Everything known about one task and its project, for drafting a prompt for Claude Code.
+pub fn prompt_context(id: &str, item: &Map<String, Value>, projects: &[Doc], items: &[Doc]) -> String {
+    let today = today_days();
+    let pid = s(item, "project").unwrap_or("inbox");
+    let project = projects.iter().find(|(p, _)| p == pid).map(|(_, m)| m);
+    let folder = project.and_then(|p| s(p, "folder"));
+    let clip = |t: &str, n: usize| t.chars().take(n).collect::<String>();
+    let mut out = format!("Today is {} {}.\n\nTask: {}\n", weekday_name(today), iso_from_days(today), s(item, "text").unwrap_or(""));
+    if let Some(o) = s(item, "original") {
+        out.push_str(&format!("The note it came from: {}\n", clip(o, 2000)));
+    }
+    if let Some(n) = s(item, "notes") {
+        out.push_str(&format!("Task notes: {}\n", clip(n, 2000)));
+    }
+    let mut line = format!("Stage: {}", stage_label(stage(item)));
+    if let Some(d) = s(item, "due") {
+        if let Some(n) = days_until(d) {
+            line.push_str(&format!(" | due {} ({})", short_date(d), relative(n)));
+        }
+    }
+    out.push_str(&line);
+    out.push('\n');
+    let tf = file_paths(item);
+    if !tf.is_empty() {
+        out.push_str("Files linked to this task:\n");
+        for f in tf {
+            out.push_str(&format!("  - {}\n", from_folder(f, folder)));
+        }
+    }
+    let Some(p) = project else {
+        out.push_str("\nThe task isn't in a project yet.\n");
+        return out;
+    };
+    out.push_str(&format!("\nProject: {}\n", s(p, "name").unwrap_or(pid)));
+    for (k, label, n) in [("goal", "Goal", 1000), ("summary", "Overview", 2500), ("context", "Context", 1000), ("notes", "Project notes", 2000)] {
+        if let Some(v) = s(p, k) {
+            out.push_str(&format!("{label}: {}\n", clip(v, n)));
+        }
+    }
+    if let Some(dl) = s(p, "deadline") {
+        if let Some(n) = days_until(dl) {
+            out.push_str(&format!("Project deadline: {} ({})\n", short_date(dl), relative(n)));
+        }
+    }
+    match folder {
+        Some(f) => {
+            out.push_str(&format!("Project folder (Claude Code runs here): {f}\n"));
+            if let Some(l) = folder_listing(f) {
+                out.push_str(&format!("Top of the folder: {l}\n"));
+            }
+        }
+        None => out.push_str("The project has no folder yet.\n"),
+    }
+    let pf = file_paths(p);
+    if !pf.is_empty() {
+        out.push_str("Files linked to the project:\n");
+        for f in pf.iter().take(20) {
+            out.push_str(&format!("  - {}\n", from_folder(f, folder)));
+        }
+    }
+    let mut others: Vec<&Doc> = items.iter().filter(|(i, m)| i != id && s(m, "project") == Some(pid) && is_open(m)).collect();
+    others.sort_by_key(|(_, m)| sort_key(m));
+    if !others.is_empty() {
+        out.push_str("Other open tasks in the project:\n");
+        for (_, m) in others.iter().take(12) {
+            out.push_str(&format!("  - [{}] {}\n", stage_label(stage(m)), s(m, "text").unwrap_or("")));
+        }
+    }
+    out
 }
 
 /// Full picture of open work, given to the chat model for the daily brief.

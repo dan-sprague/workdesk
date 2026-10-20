@@ -101,6 +101,7 @@ async fn status(State(app): State<App>) -> Json<Value> {
         "chat": chat.as_ref().map(|c| format!("{} · {}", c.provider.name, c.model)),
         "jev": cfg.jev_key().is_some(),
         "projects_root": tilde(&cfg.projects_root()),
+        "editor": cfg.editor(),
         "data_file": app.store.path().display().to_string(),
         "data_error": app.store.last_error(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -184,6 +185,29 @@ async fn brief(State(app): State<App>) -> ApiResult {
 
 /// Paste any key: Work Desk works out which service it's for, checks it, and saves it.
 /// Also `{"forget": "jev"}` or `{"forget": "chat"}`, and `{"model": "..."}`.
+async fn draft_prompt(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which task?"))?;
+    let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
+    let prompt = ai::draft_prompt(&app.store, &ai, id).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(json!({ "prompt": prompt })))
+}
+
+/// The desktop window can't always reach the clipboard itself.
+async fn copy(Json(body): Json<Value>) -> ApiResult {
+    let text = body.get("text").and_then(Value::as_str).ok_or_else(|| bad("Nothing to copy."))?.to_string();
+    tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+        use std::io::Write;
+        let mut child = std::process::Command::new("pbcopy").stdin(std::process::Stdio::piped()).spawn()?;
+        child.stdin.take().unwrap().write_all(text.as_bytes())?;
+        child.wait()?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, format!("Couldn't copy: {e}")))?;
+    Ok(Json(json!({ "copied": true })))
+}
+
 async fn settings(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
     let mut message = None;
     if let Some(k) = body.get("key").and_then(|v| v.as_str()) {
@@ -307,6 +331,7 @@ async fn stat(Json(body): Json<Value>) -> ApiResult {
 async fn open_linked(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
     let raw = body.get("path").and_then(Value::as_str).ok_or_else(|| bad("Which file?"))?;
     let reveal = body.get("reveal").and_then(Value::as_bool).unwrap_or(false);
+    let in_editor = body.get("editor").and_then(Value::as_bool).unwrap_or(false);
     let path = normalize(raw);
     if !linked(&app.store)?.contains(&path) {
         return Err(ApiError(StatusCode::FORBIDDEN, "Only files linked to a task or project can be opened from Work Desk.".into()));
@@ -318,6 +343,14 @@ async fn open_linked(State(app): State<App>, Json(body): Json<Value>) -> ApiResu
     let full = expand_home(&path);
     if !full.exists() {
         return Err(ApiError(StatusCode::NOT_FOUND, format!("{path} isn't on this computer. It may have been moved or renamed.")));
+    }
+    if in_editor {
+        let editor = app.cfg.read().unwrap().editor();
+        let out = std::process::Command::new("open").arg("-a").arg(&editor).arg(&full).output().map_err(|e| bad(&e.to_string()))?;
+        if !out.status.success() {
+            return Err(bad(&format!("Couldn't open it in {editor}. Set `editor` in config.json to the app you use.")));
+        }
+        return Ok(Json(json!({ "opened": path, "editor": editor })));
     }
     open_path(&full, reveal);
     Ok(Json(json!({ "opened": path })))
@@ -388,6 +421,8 @@ pub fn router(app: App) -> Router {
         .route("/api/settings", post(settings))
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
+        .route("/api/prompt", post(draft_prompt))
+        .route("/api/copy", post(copy))
         .route("/api/stat", post(stat))
         .route("/api/open", post(open_linked))
         .route("/api/pick", post(pick))

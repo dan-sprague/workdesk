@@ -128,6 +128,25 @@ line short, specific and kind; use the exact task wording so they can find it.\n
 Respond with a JSON object only:\n\
 {\"headline\": one sentence about today,\n \"focus\": up to 3 objects {\"task\": exact task text, \"project\": project name, \"why\": short reason},\n \"watch\": up to 3 short warnings,\n \"quick_wins\": up to 3 tasks likely to take under 30 minutes,\n \"first_step\": one tiny concrete action to start in the next 5 minutes}";
 
+const PROMPT_SYSTEM: &str = "You write a prompt that a researcher will paste into Claude Code, an AI agent \
+running inside their project folder with access to its files, a terminal and git. Write it in the researcher's \
+voice, addressed to Claude, as plain text with short headings or numbered lists. No greeting or sign-off.\n\
+Cover, briefly:\n\
+1. The goal: what this task should produce and why it matters to the project.\n\
+2. Context Claude needs: the project's goal, the files and folders that matter (use the paths given; they are \
+relative to the project folder when inside it), deadlines, and how the result will be used. Leave out people \
+and details that don't affect the work.\n\
+3. What to do: concrete steps or deliverables, and where outputs go. In folders with the usual layout, results \
+go in output/, figures and tables in display_items/, drafts in drafts/, and raw data in data/ is never changed.\n\
+4. How to check the work: what to verify, which tests or sanity checks to run, and to stop and ask before \
+anything destructive or when a choice is ambiguous.\n\
+5. What to report back when done.\n\
+Use only the facts given. When something important is unknown, put a short placeholder in [square brackets] \
+for the researcher to fill in instead of guessing. If the task is mainly writing prose (a paper section, IND \
+narrative, grant or reviewer response), ask Claude to start by working out an outline with the researcher, \
+not to draft the whole document. Keep the prompt as short as the task allows.\n\
+Respond with a JSON object only: {\"prompt\": string}.";
+
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(90))
@@ -366,12 +385,28 @@ impl Ai {
         Ok(filed)
     }
 
-    pub async fn brief(&self, projects: &[Doc], items: &[Doc]) -> Result<Value> {
-        let chat = self.chat.as_ref().ok_or_else(|| {
-            anyhow!("The daily brief needs a chat model. Add a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter.")
-        })?;
-        chat.chat_json(BRIEF_SYSTEM, &logic::brief_context(projects, items), 900).await
+    fn writer(&self, what: &str) -> Result<&Chat> {
+        self.chat
+            .as_ref()
+            .ok_or_else(|| anyhow!("{what} needs a chat model. Add a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter."))
     }
+
+    pub async fn brief(&self, projects: &[Doc], items: &[Doc]) -> Result<Value> {
+        self.writer("The daily brief")?.chat_json(BRIEF_SYSTEM, &logic::brief_context(projects, items), 900).await
+    }
+}
+
+/// Draft a prompt for Claude Code from a task and its project, and keep it on the task.
+pub async fn draft_prompt(store: &Store, ai: &Ai, id: &str) -> Result<String> {
+    let item = store.get("items", id)?.ok_or_else(|| anyhow!("There's no task with id {id}."))?;
+    let context = logic::prompt_context(id, &item, &store.list("projects")?, &store.list("items")?);
+    let v = ai.writer("Drafting a prompt")?.chat_json(PROMPT_SYSTEM, &context, 1500).await?;
+    let prompt = text_field(&v, "prompt").ok_or_else(|| anyhow!("The draft came back empty. Try again."))?;
+    let mut patch = Map::new();
+    patch.insert("prompt".into(), json!(prompt));
+    patch.insert("updated".into(), json!(now_iso()));
+    store.merge("items", id, &patch)?;
+    Ok(prompt)
 }
 
 /// Save a pasted key wherever it belongs, after checking that it works. Returns the new

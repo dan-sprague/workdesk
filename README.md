@@ -2,7 +2,8 @@
 
 Your projects, kanban board, timeline and sticky notes as a Mac app (**Work Desk.app**) and a `desk`
 command. Work Desk files your notes into the right project, tells you when a note doesn't fit any of them,
-writes a start-of-day brief, and gives every new project its own git-tracked work folder.
+writes a start-of-day brief, drafts prompts you can hand to Claude Code, and gives every new project its
+own git-tracked work folder.
 
 Open it as its own window, or in your browser with `desk`. Either way it runs only on your computer.
 Everything — every project and task — is kept in one readable file, `workdesk.json`, which you can keep
@@ -103,6 +104,7 @@ running; it notices the change.
 | `desk projects` | Lists projects and their ids |
 | `desk new "CHARM IND" -g "IND package"` | Adds a project and creates its work folder (`--no-folder` to skip) |
 | `desk key <key>` | Saves an API key; Work Desk works out which service it's for |
+| `desk prompt "power sweep"` | Drafts a prompt for Claude Code about a task, prints it and copies it |
 | `desk drive` | Moves your data into Google Drive and uses it from there |
 | `desk use-file "<path>"` | Uses a data file in any other folder |
 | `desk merge "<file>"` | Folds in another copy (e.g. a Drive conflict copy), newest edits win |
@@ -155,6 +157,20 @@ it picks from your projects plus “none of these” and says how sure it is. Wh
 (`JEV_MIN_CONFIDENCE` in `src/ai.rs`) the note waits in the Inbox. The chat model still tidies the wording,
 finds the date and suggests the new project's name. A Jev key on its own files notes but can't write the
 brief.
+
+## Prompts for Claude
+
+Open any task and click **Draft prompt** under **Prompt for Claude**. Work Desk writes a prompt for Claude
+Code from the task, its notes and linked files, and the project's goal, overview, folder and other open
+tasks. It covers the goal, the context Claude needs, what to do, how to check the work, and what to report
+back. Anything it doesn't know is left as a `[placeholder]` for you to fill in.
+
+- Edit it in the box; your edits are saved on the task.
+- **Copy**, then **Open <folder> in VS Code** and paste it into Claude Code there.
+- **Redraft** writes a fresh one (replacing your edits), e.g. after you've added notes.
+- For writing tasks (paper sections, IND narrative), the prompt asks Claude to start on an outline with
+  you rather than draft the whole document.
+- To open folders in another editor, set `editor` in config.json to its app name (e.g. `"Cursor"`).
 
 ## New projects get a work folder
 

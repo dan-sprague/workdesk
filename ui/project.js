@@ -12,7 +12,7 @@
   };
   const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
   let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
-  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null;
+  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null;
   const fstat=new Map(); // path -> what /api/stat said about it on this computer
 
   const filesOf=x=>Array.isArray(x?.files)?x.files.filter(f=>f&&f.path):[];
@@ -348,6 +348,7 @@
         <div class="field"><label for="td-due">Due</label><input type="date" id="td-due" value="${esc(it.due||'')}"></div>
       </div>
       <div class="field"><label for="td-notes">Notes</label><textarea id="td-notes" rows="4" placeholder="Details, decisions, what done looks like…">${esc(it.notes||'')}</textarea></div>
+      ${promptSection(it, p)}
       <section class="td-files" data-drop="${esc(target)}"><div class="panel-head"><h3 class="sec-h">Files</h3><span class="label">${fs.length||''}</span></div>
         ${fs.length?`<ul class="files">${fs.map(f=>fileRow(f,target)).join('')}</ul>`:'<p class="empty">Nothing linked yet: scripts, drafts, figures, data folders or web links.</p>'}
         ${linkControls(target)}</section>
@@ -358,6 +359,23 @@
         <button type="button" class="btn" data-tclose>Done</button>
       </div></div>`; });
   }
+  // A prompt for Claude Code, drafted from the task and its project; editable, kept on the task.
+  function promptSection(it, p){
+    const busy=promptBusy===it.id, folder=p?.folder;
+    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?'<button type="button" class="mini" data-pdraft title="Write a new draft. Replaces the text below.">Redraft</button>':''}</div>`;
+    if(busy) return `<section class="td-prompt">${head}<p class="empty">Drafting from the task, its notes and files, and the project…</p></section>`;
+    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, and the project's goal and folder. You can edit it before copying.</p>
+      <div><button type="button" class="mini primary" data-pdraft ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}>Draft prompt</button></div></section>`;
+    return `<section class="td-prompt">${head}
+      <textarea id="td-prompt" rows="12" aria-label="Prompt for Claude">${esc(it.prompt)}</textarea>
+      <div class="compose-row"><button type="button" class="btn" data-pcopy>Copy</button>${folder?`<button type="button" class="mini" data-peditor="${esc(folder)}" title="Open ${esc(folder)}">${ICON.folder}Open ${esc(baseName(folder))} in ${esc(editorShort())}</button>`:''}</div></section>`;
+  }
+  const editorShort=()=>editorName==='Visual Studio Code'?'VS Code':editorName;
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t); return; }catch(_){}
+    await db.call('POST','/api/copy',{text:t});
+  }
+
   async function saveTaskField(id, patch){
     const it=itemOf(id); if(!it) return;
     if(Object.keys(patch).every(k=>(it[k]??'')===(patch[k]??''))) return;
@@ -365,15 +383,29 @@
   }
   function saveDlgText(){
     if(!dlgId) return;
-    const t=$('td-text'), n=$('td-notes'), patch={};
+    const t=$('td-text'), n=$('td-notes'), pr=$('td-prompt'), patch={};
     if(t && t.value.trim() && t.value.trim()!==itemOf(dlgId)?.text) patch.text=t.value.trim();
     if(n && n.value!==(itemOf(dlgId)?.notes||'')) patch.notes=n.value;
-    if(Object.keys(patch).length) saveTaskField(dlgId, patch);
+    if(pr && pr.value!==(itemOf(dlgId)?.prompt||'')) patch.prompt=pr.value;
+    if(Object.keys(patch).length) return saveTaskField(dlgId, patch);
   }
   const dlg=$('task-dlg');
   dlg.addEventListener('click', async e=>{
     if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
     if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
+    if(e.target.closest('[data-pdraft]')){
+      const id=dlgId; await saveDlgText(); promptBusy=id; renderTaskDlg();
+      try{ await db.call('POST','/api/prompt',{id}); await db.refreshAll(); }
+      catch(err){ toast('Could not draft the prompt: '+err.message, true); }
+      promptBusy=null; renderTaskDlg(); return;
+    }
+    if(e.target.closest('[data-pcopy]')){
+      const v=$('td-prompt')?.value||''; saveDlgText();
+      try{ await copyText(v); toast('Copied. Paste it into Claude.'); }catch(err){ toast('Could not copy: '+err.message, true); }
+      return;
+    }
+    const ed=e.target.closest('[data-peditor]');
+    if(ed){ try{ await db.call('POST','/api/open',{path:ed.dataset.peditor, editor:true}); }catch(err){ toast(err.message, true); } return; }
     if(e.target.closest('[data-tdel-no]')){ dlgDelete=false; renderTaskDlg(); return; }
     if(e.target.closest('[data-tdel-yes]')){
       const id=dlgId;
@@ -384,7 +416,7 @@
   dlg.addEventListener('close', ()=>{ saveDlgText(); dlgDelete=false; });
   dlg.addEventListener('change', e=>{
     const id=dlgId, it=itemOf(id); if(!it) return;
-    if(e.target.id==='td-text'||e.target.id==='td-notes') saveDlgText();
+    if(e.target.id==='td-text'||e.target.id==='td-notes'||e.target.id==='td-prompt') saveDlgText();
     else if(e.target.id==='td-proj') saveTaskField(id,{project:e.target.value});
     else if(e.target.id==='td-stage') moveTo(id, e.target.value);
     else if(e.target.id==='td-start'){ const v=e.target.value||null, patch={start:v}; if(v && !it.due) patch.due=v; saveTaskField(id,patch); }

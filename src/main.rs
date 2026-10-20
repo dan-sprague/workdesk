@@ -4,6 +4,7 @@
 //!   desk app             open it in its own window (what Work Desk.app runs)
 //!   desk add "<note>"    file a sticky note (Work Desk picks the project)
 //!   desk new "<name>"    add a project, with its own git-tracked work folder
+//!   desk prompt "<task>" draft a prompt for Claude Code about a task
 //!   desk today           what needs doing today
 //!   desk brief           a start-of-day plan
 //!   desk sort            file everything waiting in the Inbox
@@ -63,6 +64,12 @@ enum Cmd {
         /// The note, e.g. "Tox: analyze Sonia's data by Friday"
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
+    },
+    /// Draft a prompt for Claude Code about a task, print it and copy it
+    Prompt {
+        /// The task's id, or words from it
+        #[arg(required = true, num_args = 1..)]
+        task: Vec<String>,
     },
     /// Show what needs doing today
     Today,
@@ -270,6 +277,44 @@ async fn run(cmd: Cmd) -> Result<()> {
             println!("{line}");
             if let Some(n) = c.notice {
                 println!("{}", paint.dim(&n));
+            }
+        }
+        Cmd::Prompt { task } => {
+            let store = open_store(&cfg)?;
+            let ai = need_ai(&cfg, &http)?;
+            let q = task.join(" ");
+            let items = store.list("items")?;
+            let found: Vec<&(String, Map<String, Value>)> = match items.iter().find(|(id, _)| *id == q) {
+                Some(exact) => vec![exact],
+                None => items
+                    .iter()
+                    .filter(|(_, m)| logic::is_open(m) && logic::s(m, "text").map_or(false, |t| t.to_lowercase().contains(&q.to_lowercase())))
+                    .collect(),
+            };
+            let (id, _) = match found.as_slice() {
+                [one] => *one,
+                [] => bail!("No open task matches '{q}'."),
+                many => {
+                    for (id, m) in many.iter().take(10) {
+                        println!("  {}  {}", paint.cyan(id), logic::s(m, "text").unwrap_or(""));
+                    }
+                    bail!("{} tasks match. Use more words, or one of the ids above.", many.len());
+                }
+            };
+            eprintln!("{}", paint.dim("Drafting…"));
+            let prompt = ai::draft_prompt(&store, &ai, id).await?;
+            println!("{prompt}");
+            let copied = std::process::Command::new("pbcopy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut c| {
+                    use std::io::Write;
+                    c.stdin.take().unwrap().write_all(prompt.as_bytes())?;
+                    c.wait()
+                })
+                .map_or(false, |s| s.success());
+            if copied {
+                eprintln!("{}", paint.dim("Copied. It's also saved on the task."));
             }
         }
         Cmd::Today => {

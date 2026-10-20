@@ -110,3 +110,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .td-foot a.mini{text-decoration:none}
 .td-spacer{flex:1}
+.td-prompt{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.td-prompt .sec-h{font-size:1rem}
+.tdlg .td-prompt textarea{width:100%;min-height:220px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:.8rem;line-height:1.5;resize:vertical}
+.td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}

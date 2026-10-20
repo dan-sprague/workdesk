@@ -174,10 +174,10 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
   function flash(id,msg){ $(id).textContent=msg; setTimeout(()=>{ if($(id).textContent===msg) $(id).textContent=''; },7000); }
 
   // aiOn: some AI can file notes. chatOn: a chat model, which the brief needs (Jev alone can't write one).
-  let aiOn=false, chatOn=false, keysOpen=false, projectsRoot='~/Documents/Projects/Repos';
+  let aiOn=false, chatOn=false, keysOpen=false, projectsRoot='~/Documents/Projects/Repos', editorName='Visual Studio Code';
   async function loadStatus(){
     try{
-      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot;
+      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName;
       $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
       $('ai-state').innerHTML=`<li><b>Chat model</b> ${s.chat?`${esc(s.chat)} <button class="linkish" type="button" data-forget="chat">Remove</button>`:'<span class="empty">none yet</span>'}</li>`
         +`<li><b>Jev</b> ${s.jev?'on: checks which project each note fits <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
