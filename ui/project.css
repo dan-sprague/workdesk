@@ -126,3 +126,11 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .card-nav .card-done:active{transform:scale(.88)}
 .row input[type=checkbox]:checked{animation:tick-pop .35s cubic-bezier(.3,1.6,.5,1)}
 @keyframes tick-pop{0%{transform:scale(.6)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+.pp-warn{margin:0;padding:8px 12px;border-radius:10px;background:var(--soon-soft);color:var(--soon);font-size:.9rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pp-deliv{margin:0;font-size:.95rem}
+.pp-deliv .label{margin-right:6px}
+.fd-task.pl-m{grid-template-columns:20px minmax(0,1fr) 150px;align-items:center}
+.fd-task.pl-m input[type=checkbox]{width:18px;height:18px}
+@media (max-width:520px){.fd-task.pl-m{grid-template-columns:20px minmax(0,1fr)}.fd-task.pl-m input[type=date]{grid-column:2}}
+.chip.nodeliv{cursor:pointer}
+.pl-dup{grid-column:2/-1;font-size:.8rem;color:var(--muted);margin-top:-4px}

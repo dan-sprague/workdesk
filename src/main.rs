@@ -97,6 +97,12 @@ enum Cmd {
         #[arg(long)]
         no_folder: bool,
     },
+    /// Create the work folder for an existing project that doesn't have one yet
+    Folder {
+        /// Project id, or part of its name
+        #[arg(required = true, num_args = 1..)]
+        project: Vec<String>,
+    },
     /// Save an API key. Work Desk works out which service it's for: DeepSeek, OpenAI,
     /// Anthropic, Google Gemini, OpenRouter, or TypeSafe's Jev (checks which project a note fits)
     Key {
@@ -390,6 +396,22 @@ async fn run(cmd: Cmd) -> Result<()> {
                 None => println!("Saved. Add a key with `desk key` to use it."),
             }
         }
+        Cmd::Folder { project } => {
+            let store = open_store(&cfg)?;
+            let q = project.join(" ").to_lowercase();
+            let projects = store.list("projects")?;
+            let found: Vec<&(String, Map<String, Value>)> = projects
+                .iter()
+                .filter(|(id, m)| id.to_lowercase() == q || logic::s(m, "name").map_or(false, |n| n.to_lowercase().contains(&q)))
+                .collect();
+            let (id, _) = match found.as_slice() {
+                [one] => *one,
+                [] => bail!("No project matches '{q}'. Run `desk projects` to see the ids."),
+                _ => bail!("More than one project matches '{q}'. Use its id (`desk projects`)."),
+            };
+            let c = project::add_folder(&store, &cfg, id)?;
+            println!("{}", c.notice.unwrap_or_default());
+        }
         Cmd::Hours { hours } => {
             if !(hours > 0.0 && hours <= 24.0) {
                 bail!("Give a number of hours between 0 and 24.");
@@ -406,7 +428,7 @@ async fn run(cmd: Cmd) -> Result<()> {
             if let Some(g) = goal {
                 doc.insert("goal".into(), json!(g));
             }
-            let c = project::create(&store, &cfg, doc, !no_folder, &[])?;
+            let c = project::create(&store, &cfg, doc, !no_folder, &[], &[])?;
             println!("{} {}  {}", paint.bold("Added:"), logic::s(&c.doc, "name").unwrap_or(""), paint.cyan(&c.id));
             if let Some(n) = c.notice {
                 println!("{n}");

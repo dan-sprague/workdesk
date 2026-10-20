@@ -16,6 +16,7 @@
   let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null, promptMode='';
   const promptStale=new Map(); // task id -> what changed in the project folder since its prompt was drafted
   const fstat=new Map(); // path -> what /api/stat said about it on this computer
+  let projectKinds=[];   // [{id, label, folders}] from /api/status
 
   const filesOf=x=>Array.isArray(x?.files)?x.files.filter(f=>f&&f.path):[];
   const isLink=p=>/^https?:\/\//.test(p||'');
@@ -203,8 +204,9 @@
 
     const head = pageEdit ? pageForm(p) : `
       <div class="pp-title"><span class="swatch"></span><h2>${esc(p.name)}</h2>
-        <div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dlChip}<button class="mini" type="button" data-pp-edit>Edit</button></div></div>
+        <div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dlChip}${p.deliverable?'<button class="mini" type="button" data-pp-framework title="Kind, deliverable and milestones">Framework…</button>':''}<button class="mini" type="button" data-pp-edit>Edit</button></div></div>
       ${p.goal?`<p class="pp-goal">${esc(p.goal)}</p>`:`<p class="empty">No goal yet. <button type="button" class="linkish" data-pp-edit>Add one</button></p>`}
+      ${p.deliverable?`<p class="pp-deliv"><span class="label">Deliverable</span> ${esc(p.deliverable)}</p>`:`<p class="pp-warn">No deliverable yet: what will this project produce? <button type="button" class="mini primary" data-pp-framework>Suggest a framework</button></p>`}
       <div class="pp-stats">${stat(open.length,'open')}${stat(by.doing.length,'in progress')}${stat(by.review.length,'in review')}${stat(by.done.length,'done')}${overdue?stat(overdue,'overdue','late'):''}${nextDue?stat(fmt(nextDue.due),'next due'):''}${p.deadline?stat(fmt(p.deadline),'deadline',dd!==null&&dd<=7?'late':''):''}</div>
       ${bar}`;
 
@@ -221,7 +223,7 @@
     const pf=filesOf(p), taskFiles=all.flatMap(it=>filesOf(it).map(f=>({f,it})));
     const soon=dated.filter(i=>days(i.due)<=21);
     const folder=p.folder?`<span class="pp-folder"><button type="button" class="fname" data-fopen="${esc(p.folder)}" title="Open ${esc(p.folder)}">${ICON.folder}${esc(baseName(p.folder))}</button><button type="button" class="mini" data-freveal="${esc(p.folder)}">Show</button></span><span class="fpath" title="${esc(p.folder)}">${esc(dirName(p.folder))}</span>${fstat.get(p.folder)?.exists===false?'<span class="chip late">not on this Mac</span>':''}`
-      :`<button type="button" class="linkish" data-pp-folder>Link the project folder…</button>`;
+      :`<button type="button" class="mini" data-pp-mkfolder>Create a project folder</button> <span class="fpath">or</span> <button type="button" class="linkish" data-pp-folder>link one…</button>`;
 
     const html=`<div class="pp" style="--h:${h}" data-drop="projects:${esc(p.id)}">
       <nav class="pp-nav"><a class="pp-back" href="#">← ${VIEW_NAMES[lastView]}</a>
@@ -232,6 +234,8 @@
             ${p.summary?`<div class="pp-text">${fmtText(p.summary)}</div>`:`<p class="empty">What this project is, where it stands, what's left. <button type="button" class="linkish" data-pp-edit>Write an overview</button></p>`}</section>
         <section class="panel"><h3 class="sec-h">Details</h3>
             <dl class="pp-dl">
+              <dt>Kind</dt><dd>${esc(kindLabel(p.type))}</dd>
+              <dt>Deliverable</dt><dd>${p.deliverable?esc(p.deliverable):'<span class="warn">None yet.</span> <button type="button" class="linkish" data-pp-framework>Suggest a framework</button>'}</dd>
               <dt>Folder</dt><dd>${folder}</dd>
               <dt>Deadline</dt><dd>${p.deadline?`${new Date(p.deadline+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'long',day:'numeric',year:'numeric'})}`:'None set'}</dd>
               <dt>Status</dt><dd>${esc(p.status||'active')} · ${esc(p.tier||'standard')}</dd>
@@ -268,8 +272,10 @@
     return `<form class="proj-form" id="pp-form">
       <div class="field"><label for="ppf-name">Name</label><input id="ppf-name" name="name" value="${esc(d.name||'')}" required></div>
       <div class="field"><label for="ppf-goal">Goal</label><textarea id="ppf-goal" name="goal" rows="2">${esc(d.goal||'')}</textarea></div>
+      <div class="field"><label for="ppf-deliv">Deliverable (the one thing this project produces)</label><input id="ppf-deliv" name="deliverable" value="${esc(d.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology"></div>
       <div class="field"><label for="ppf-summary">Overview (blank line between paragraphs, "- " for bullets)</label><textarea id="ppf-summary" name="summary" rows="8">${esc(d.summary||'')}</textarea></div>
       <div class="pf-row">
+        <div class="field"><label for="ppf-type">Kind</label><select id="ppf-type" name="type">${projectKinds.map(k=>`<option value="${k.id}" ${(d.type||'other')===k.id?'selected':''}>${esc(k.label)}</option>`).join('')}</select></div>
         <div class="field"><label for="ppf-deadline">Deadline</label><input type="date" id="ppf-deadline" name="deadline" value="${esc(d.deadline||'')}"></div>
         <div class="field"><label for="ppf-tier">Tier</label><select id="ppf-tier" name="tier">${opt(['major','standard'],d.tier||'standard')}</select></div>
         <div class="field"><label for="ppf-status">Status</label><select id="ppf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
@@ -290,6 +296,14 @@
   $('proj-view').addEventListener('click', async e=>{
     const p=projOf(pageId); if(!p) return;
     if(e.target.closest('[data-pp-edit]')){ pageEdit=true; pageDraft={}; renderPage(); setTimeout(()=>$('ppf-name')?.focus(),0); return; }
+    if(e.target.closest('[data-pp-framework]')){ openFramework(p.id); return; }
+    const mk=e.target.closest('[data-pp-mkfolder]');
+    if(mk){
+      mk.disabled=true;
+      try{ const r=await db.call('POST','/api/project-folder',{id:p.id}); await db.refreshAll(); toast(r.notice||'Folder created.', /^Couldn|^Didn/.test(r.notice||'')); }
+      catch(err){ mk.disabled=false; toast('Could not create the folder: '+err.message, true); }
+      return;
+    }
     if(e.target.closest('[data-pp-cancel]')){ pageEdit=false; pageDraft={}; renderPage(); return; }
     if(e.target.closest('[data-pp-board]')){ filter=p.id; saveFilter(); setView('board'); window.scrollTo(0,0); return; }
     if(e.target.closest('[data-pp-moredone]')){ doneShown+=20; renderPage(); return; }
@@ -324,13 +338,77 @@
     if(e.target.id==='pp-form'){
       e.preventDefault();
       const f=new FormData(e.target), data={};
-      for(const k of ['name','goal','summary','deadline','tier','status','folder','context']) data[k]=(f.get(k)||'').toString().trim();
+      for(const k of ['name','goal','deliverable','type','summary','deadline','tier','status','folder','context']) data[k]=(f.get(k)||'').toString().trim();
       if(!data.name) return;
       if(data.folder){ try{ const [s]=await db.call('POST','/api/stat',{paths:[data.folder]}); if(!s.exists||!s.dir){ toast(`There's no folder at ${data.folder}.`, true); return; } data.folder=s.path; }catch(_){} }
       try{ await db.doc('projects/'+p.id).update(data); pageEdit=false; pageDraft={}; renderPage(); }
       catch(err){ toast('Could not save the project: '+err.message, true); }
     }
   });
+
+  // ---- framework: kind, deliverable, deadline, overview, milestones and folder ----
+  // Work Desk proposes (Jev picks the kind; the chat model writes the rest); nothing changes until Apply.
+  let planResolve=null, planInfo=null;
+  const kindLabel=id=>(projectKinds.find(k=>k.id===(id||'other'))||{}).label||'Other';
+  const folderList=kind=>((projectKinds.find(k=>k.id===kind)||projectKinds.find(k=>k.id==='other')||{}).folders||[]).join(' ');
+  function slugOf(n){ let o=''; for(const ch of (n||'').trim().toLowerCase()){ if(/[a-z0-9]/.test(ch)) o+=ch; else if(o && !o.endsWith('-')) o+='-'; } return o.replace(/-+$/,'').slice(0,40).replace(/-+$/,''); }
+
+  // Show a proposal for `info` (name, folder, deadline, deliverable, type, wantFolder); resolves with what
+  // the person confirmed, or null if they cancel.
+  async function askFramework(info, body){
+    planInfo=info; const d=$('plan-dlg');
+    d.innerHTML=`<div class="td-body"><div class="td-head"><h3 class="sec-h">Framework for ${esc(info.name)}</h3><button type="button" class="icon-btn close" data-plcancel aria-label="Cancel">${ICON.x}</button></div><p class="empty">Working out what kind of project this is, what it delivers, and the steps to get there…</p></div>`;
+    if(!d.open) d.showModal();
+    let s; try{ s=await db.call('POST','/api/plan',body); }catch(err){ s={error:err.message}; }
+    if(!d.open) return null;
+    renderPlan(s);
+    return new Promise(res=>{ planResolve=res; });
+  }
+  function renderPlan(s){
+    const info=planInfo, kind=s.type||info.type||'other', ms=s.milestones||[];
+    const opts=projectKinds.map(k=>`<option value="${k.id}" ${k.id===kind?'selected':''}>${esc(k.label)}</option>`).join('');
+    $('plan-dlg').innerHTML=`<form class="td-body" id="plan-form">
+      <div class="td-head"><h3 class="sec-h">Framework for ${esc(info.name)}</h3><button type="button" class="icon-btn close" data-plcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${s.error?`<p class="warn" style="margin:0">${esc(s.error)} You can fill it in yourself.</p>`:'<p class="fd-why">Check it over and change anything. Nothing is saved until you press Apply.</p>'}
+      <div class="ed-grid td-fields">
+        <div class="field"><label for="pl-type">Kind of project ${s.type_by==='jev'&&s.type_p!=null?`<span class="triage-by" title="Jev's estimate">Jev ${Math.round(s.type_p*100)}%</span>`:''}</label><select id="pl-type">${opts}</select></div>
+        <div class="field"><label for="pl-deadline">Deadline</label><input type="date" id="pl-deadline" value="${esc(s.deadline||info.deadline||'')}"></div>
+      </div>
+      <div class="field"><label for="pl-deliv">Deliverable: the one thing this project produces</label><input id="pl-deliv" value="${esc(s.deliverable||info.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology" required></div>
+      <div class="field"><label for="pl-summary">Overview</label><textarea id="pl-summary" rows="3">${esc(s.summary||'')}</textarea></div>
+      <div class="field"><label>Milestones, added as tasks</label>
+        ${ms.length?`<ul class="fd-tasks">${ms.map((m,i)=>`<li class="fd-task pl-m"><input type="checkbox" ${m.repeats?'':'checked'} aria-label="Add this milestone"><textarea rows="1" aria-label="Milestone ${i+1}">${esc(m.text)}</textarea><input type="date" aria-label="Due" value="${esc(m.due||'')}">${m.repeats?`<span class="pl-dup">Already a task: “${esc(m.repeats)}”</span>`:''}</li>`).join('')}</ul>`:'<p class="empty">None suggested.</p>'}
+      </div>
+      ${info.folder?`<p class="hint" style="margin:0">Folder <code>${esc(info.folder)}</code> stays as it is.</p>`
+        :`<label class="pf-check"><input type="checkbox" id="pl-folder" ${(info.wantFolder??kind!=='task')?'checked':''}> Create <code>${esc(projectsRoot)}/${esc(slugOf(info.name)||'project')}</code> with <span id="pl-folders">${esc(folderList(kind))}</span></label>`}
+      ${s.assumptions?.length?`<details class="fd-orig"><summary>What Work Desk assumed</summary><ul>${s.assumptions.map(a=>`<li>${esc(a)}</li>`).join('')}</ul></details>`:''}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-plcancel>Cancel</button><button type="submit" class="btn">Apply</button></div>
+    </form>`;
+    setTimeout(()=>$('pl-deliv')?.focus(),0);
+  }
+  const pdlg=$('plan-dlg');
+  pdlg.addEventListener('click', e=>{ if(e.target===pdlg || e.target.closest('[data-plcancel]')) pdlg.close(); });
+  pdlg.addEventListener('change', e=>{
+    if(e.target.id!=='pl-type') return;
+    const f=$('pl-folders'); if(f) f.textContent=folderList(e.target.value);
+    const c=$('pl-folder'); if(c && planInfo.wantFolder==null) c.checked=e.target.value!=='task';
+  });
+  pdlg.addEventListener('submit', e=>{
+    e.preventDefault();
+    const milestones=[...pdlg.querySelectorAll('.pl-m')].filter(li=>li.querySelector('input[type=checkbox]').checked)
+      .map(li=>({text:li.querySelector('textarea').value.trim(), due:li.querySelector('input[type=date]').value||null})).filter(m=>m.text);
+    const out={type:$('pl-type').value, deliverable:$('pl-deliv').value.trim(), deadline:$('pl-deadline').value||'', summary:$('pl-summary').value.trim(), milestones, make_folder:!!$('pl-folder')?.checked};
+    const res=planResolve; planResolve=null; pdlg.close(); res?.(out);
+  });
+  pdlg.addEventListener('close', ()=>{ if(planResolve){ const r=planResolve; planResolve=null; r(null); } });
+
+  async function openFramework(id){
+    const p=projOf(id); if(!p) return;
+    const r=await askFramework({name:p.name, folder:p.folder, deadline:p.deadline, deliverable:p.deliverable, type:p.type}, {id});
+    if(!r) return;
+    try{ const out=await db.call('POST','/api/framework',{id, ...r}); await db.refreshAll(); toast(out.notice?`Framework saved. ${out.notice}`:'Framework saved.', /^Couldn|Couldn't/.test(out.notice||'')); }
+    catch(err){ toast('Could not save the framework: '+err.message, true); }
+  }
 
   // ---- task details dialog ----
   function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); checkPrompt(id); }

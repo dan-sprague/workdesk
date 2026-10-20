@@ -103,6 +103,7 @@ async fn status(State(app): State<App>) -> Json<Value> {
         "projects_root": tilde(&cfg.projects_root()),
         "editor": cfg.editor(),
         "hours_per_day": cfg.hours_per_day(),
+        "kinds": project::kinds_json(),
         "data_file": app.store.path().display().to_string(),
         "data_error": app.store.last_error(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -141,9 +142,11 @@ async fn create(State(app): State<App>, Path(coll): Path<String>, Json(body): Js
         .remove("move")
         .and_then(|v| v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()))
         .unwrap_or_default();
+    let milestones = project::read_milestones(doc.remove("milestones").as_ref());
+    doc.retain(|_, v| !v.is_null() && v.as_str() != Some(""));
     let cfg = app.cfg.read().unwrap().clone();
     let store = app.store.clone();
-    let c = tokio::task::spawn_blocking(move || project::create(&store, &cfg, doc, make_folder, &moves))
+    let c = tokio::task::spawn_blocking(move || project::create(&store, &cfg, doc, make_folder, &moves, &milestones))
         .await
         .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .map_err(|e| bad(&e.to_string()))?;
@@ -188,6 +191,54 @@ async fn suggest(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
         "warning": f.warning,
         "duplicate": f.duplicate_json(),
     })))
+}
+
+/// Propose a framework: `{"id"}` for an existing project, or `{"project": {...}}` for one being added.
+async fn plan(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys to get a suggested framework."))?;
+    let (project, tasks) = match body.get("id").and_then(Value::as_str) {
+        Some(id) => {
+            let p = app.store.get("projects", id)?.ok_or_else(|| ApiError(StatusCode::NOT_FOUND, format!("No project with id {id}")))?;
+            let tasks = app.store.list("items")?.into_iter().filter(|(_, m)| crate::logic::s(m, "project") == Some(id)).collect();
+            (p, tasks)
+        }
+        None => (body.get("project").and_then(Value::as_object).cloned().ok_or_else(|| bad("Which project?"))?, Vec::new()),
+    };
+    let f = ai::plan_project(&ai, &project, &tasks).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    Ok(Json(f.to_json()))
+}
+
+/// Apply a confirmed framework to an existing project: `{id, type, deliverable, deadline, summary, milestones, make_folder}`.
+async fn framework(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let Value::Object(body) = body else { return Err(bad("Expected a JSON object")) };
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which project?"))?.to_string();
+    let milestones = project::read_milestones(body.get("milestones"));
+    let want_folder = body.get("make_folder").and_then(Value::as_bool).unwrap_or(false);
+    let cfg = app.cfg.read().unwrap().clone();
+    let store = app.store.clone();
+    let c = tokio::task::spawn_blocking(move || project::apply_framework(&store, &cfg, &id, &body, &milestones, want_folder))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| bad(&e.to_string()))?;
+    let mut out = with_id(&c.id, c.doc);
+    if let Some(n) = c.notice {
+        out["notice"] = json!(n);
+    }
+    Ok(Json(out))
+}
+
+/// Create the work folder for an existing project that doesn't have one: `{"id"}`.
+async fn project_folder(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which project?"))?.to_string();
+    let cfg = app.cfg.read().unwrap().clone();
+    let store = app.store.clone();
+    let c = tokio::task::spawn_blocking(move || project::add_folder(&store, &cfg, &id))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| bad(&e.to_string()))?;
+    let mut out = with_id(&c.id, c.doc);
+    out["notice"] = json!(c.notice);
+    Ok(Json(out))
 }
 
 async fn sort_inbox(State(app): State<App>) -> ApiResult {
@@ -459,6 +510,9 @@ pub fn router(app: App) -> Router {
         .route("/api/rev", get(rev))
         .route("/api/settings", post(settings))
         .route("/api/suggest", post(suggest))
+        .route("/api/plan", post(plan))
+        .route("/api/framework", post(framework))
+        .route("/api/project-folder", post(project_folder))
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
         .route("/api/prompt", post(draft_prompt))

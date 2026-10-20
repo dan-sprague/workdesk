@@ -103,6 +103,7 @@ running; it notices the change.
 | `desk sort` | Files everything waiting in the Inbox |
 | `desk projects` | Lists projects and their ids |
 | `desk new "CHARM IND" -g "IND package"` | Adds a project and creates its work folder (`--no-folder` to skip) |
+| `desk folder "Brain MRI"` | Creates the work folder for an existing project that doesn't have one |
 | `desk key <key>` | Saves an API key; Work Desk works out which service it's for |
 | `desk prompt "power sweep"` | Drafts a prompt for Claude Code about a task, prints it and copies it |
 | `desk drive` | Moves your data into Google Drive and uses it from there |
@@ -204,11 +205,41 @@ doesn't know is left as a `[placeholder]` for you to fill in.
   you rather than draft the whole document.
 - To open folders in another editor, set `editor` in config.json to its app name (e.g. `"Cursor"`).
 
-## New projects get a work folder
+## Deliverables and frameworks
 
-**+ New project**, `desk new`, and **Create “…”** in the Inbox all create
-`~/Documents/Projects/Repos/<project-name>/`, make it a git repo with a first commit, and link it as the
-project folder:
+Every project should say what it produces: its **deliverable**, the one concrete thing you could check off
+when it's done ("Manuscript submitted to Genome Biology", "20-minute lab meeting talk on the tox results",
+"IND Module 2.6.6 first full draft"). Active projects without one are flagged under **Needs attention**,
+with a **no deliverable** chip on their card and a warning on their page.
+
+**Suggest a framework** (on the warning, the project page, or automatically for **+ New project**) proposes:
+
+- the **kind** of project: research paper, analysis or pipeline, presentation, report or regulatory
+  document, grant, simple task, or other (Jev decides when there's a key; you can change it);
+- the **deliverable**, **deadline** (only if the project states one) and a short **overview**;
+- **milestones**: the 3 to 8 steps from where the project stands to the deliverable, following the usual
+  stages for its kind, dated back from the deadline. Steps that repeat an existing task are left unticked;
+- a **folder** laid out for that kind (below).
+
+Everything is editable in the window, and nothing changes until you press **Apply**.
+
+## Project folders
+
+**+ New project**, `desk new`, **Create “…”** in the Inbox, and **Create a project folder** on any project
+that doesn't have one yet (or `desk folder <project>`) create `~/Documents/Projects/Repos/<project-name>/`,
+make it a git repo with a first commit, and link it as the project folder. The layout depends on the kind:
+
+| Kind | Folders |
+|---|---|
+| Research paper | data, src, scripts, notebooks, output, display_items, drafts, references, notes |
+| Analysis or pipeline | data, src, scripts, notebooks, output, display_items, notes |
+| Presentation | slides, figures, data, scripts, notes |
+| Report or regulatory document | drafts, templates, data, scripts, display_items, references, notes |
+| Grant or fellowship | drafts, budget, letters, references, notes |
+| Simple task | notes (and no folder unless you ask) |
+| Other | the research layout below |
+
+For example, a research project without a kind gets:
 
 ```
 charm-ind/

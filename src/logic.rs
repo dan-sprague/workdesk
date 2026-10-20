@@ -130,6 +130,9 @@ pub fn classify_context(projects: &[Doc], items: &[Doc]) -> String {
         if let Some(g) = s(&p, "goal") {
             out.push_str(&format!("  goal: {g}\n"));
         }
+        if let Some(d) = s(&p, "deliverable") {
+            out.push_str(&format!("  deliverable: {d}\n"));
+        }
         if let Some(c) = s(&p, "context") {
             out.push_str(&format!("  context: {c}\n"));
         }
@@ -154,7 +157,7 @@ pub fn project_facts(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> Value 
     let mut out = Map::new();
     out.insert("id".into(), Value::from(pid));
     out.insert("name".into(), Value::from(s(p, "name").unwrap_or(pid)));
-    for k in ["goal", "context"] {
+    for k in ["goal", "deliverable", "context"] {
         if let Some(v) = s(p, k) {
             out.insert(k.into(), Value::from(v.chars().take(600).collect::<String>()));
         }
@@ -478,6 +481,10 @@ pub fn brief_context(projects: &[Doc], items: &[Doc]) -> String {
         if let Some(g) = s(&p, "goal") {
             out.push_str(&format!("  goal: {g}\n"));
         }
+        match s(&p, "deliverable") {
+            Some(d) => out.push_str(&format!("  deliverable: {d}\n")),
+            None => out.push_str("  deliverable: none set yet\n"),
+        }
         push_tasks(&mut out, &pid);
         out.push('\n');
     }
@@ -612,6 +619,15 @@ pub fn today_report(projects: &[Doc], items: &[Doc], c: &Paint) -> String {
         .collect();
     if !empty.is_empty() {
         out.push_str(&format!("\n{}\n", c.dim(&format!("No tasks yet: {}", empty.join(", ")))));
+    }
+
+    let undelivered: Vec<String> = ordered(projects)
+        .into_iter()
+        .filter(|(_, p)| is_active(p) && s(p, "deliverable").is_none())
+        .map(|(pid, p)| s(&p, "name").unwrap_or(&pid).to_string())
+        .collect();
+    if !undelivered.is_empty() {
+        out.push_str(&format!("\n{}\n", c.yellow(&format!("No deliverable yet: {}. Set one on the project's page.", undelivered.join(", ")))));
     }
 
     let inbox = open.iter().filter(|(_, m)| s(m, "project") == Some("inbox")).count();

@@ -18,6 +18,12 @@ Releases are tagged `vX.Y.Z` on `main`.
   task, sizes every open task and judges whether it's waiting, vague or critical, and reads tasks before
   prompts are drafted. Work Desk plans the day from those judgments against your hours
   (`desk hours`), and the chat model writes with them in front of it.
+- **Deliverables and frameworks.** Projects have a deliverable; active ones without it are flagged.
+  **Suggest a framework** proposes the kind of project (paper, analysis, presentation, report or regulatory
+  document, grant, simple task, other; Jev decides the kind), the deliverable, deadline, overview, and
+  milestones dated back from the deadline (repeats of existing tasks left unticked), plus a folder laid out
+  for that kind. It runs for new projects and from any project's page; nothing changes until you apply it.
+- **Folders for existing projects.** **Create a project folder** on the project page, or `desk folder`.
 - **Project work folders.** New projects get `~/Documents/Projects/Repos/<name>` with a standard
   research layout, set up as a git repo with a first commit. `desk new`.
 - **Prompts for Claude.** Draft, edit and copy a Claude Code prompt from any task; open the project

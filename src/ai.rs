@@ -444,6 +444,164 @@ impl Ai {
     }
 }
 
+const FRAMEWORK_SYSTEM: &str = "You set up a project in a researcher's tracker so it has a clear finish line. \
+From what's known about the project (name, goal, overview, notes, deadline, existing tasks), propose a framework:\n\
+- type: the kind of project, one of the ids listed under Kinds.\n\
+- deliverable: the one concrete thing the project produces, as a short phrase someone could check off when it's \
+done, in the project's own terms (for example 'Manuscript submitted to Genome Biology', '20-minute lab meeting \
+talk on the tox results', 'IND Module 2.6.6 toxicology written summary, first full draft'). If the project already \
+names one, keep it, tightened. If not, propose the most likely one and say so in assumptions.\n\
+- deadline: the ISO date the deliverable is due if the project states or clearly implies one; otherwise null. \
+Never invent a date.\n\
+- summary: two or three plain sentences for the project page: what it is, where it stands, what's left.\n\
+- milestones: the 3 to 8 steps from where the project stands now to the deliverable, in order, following the usual \
+stages for its kind (listed under Kinds) but fitted to this project. Each is a short, concrete task in the \
+researcher's words. Never repeat an existing task: when an existing task covers a step, leave the step out (the \
+existing task stays as it is), and leave out steps that are done. A simple task gets 1 to 3 \
+steps. If there is a deadline, give each milestone a due date spaced sensibly before it, leaving the last stretch \
+for review; otherwise null.\n\
+- assumptions: short notes on anything you guessed.\n\
+When the message includes Jev's judgments, Jev is a calibrated classifier: use its most likely kind unless the \
+project's own words clearly say otherwise.\n\
+Respond with a JSON object only: {\"type\": string, \"deliverable\": string, \"deadline\": string or null, \
+\"summary\": string, \"milestones\": [{\"task\": string, \"due\": string or null}], \"assumptions\": [string]}.";
+
+/// A proposed framework for a project, for the person to review before anything changes.
+pub struct Framework {
+    pub kind: String,
+    /// "jev" when the kind is Jev's pick, with its probability; otherwise "model".
+    pub kind_by: (&'static str, Option<f64>),
+    pub deliverable: Option<String>,
+    pub deadline: Option<String>,
+    pub summary: Option<String>,
+    pub milestones: Vec<NewTask>,
+    /// For each milestone, the open task it seems to repeat, if any (it's offered unticked).
+    pub repeats: Vec<Option<String>>,
+    pub assumptions: Vec<String>,
+}
+
+/// Words that carry meaning, for comparing task wordings.
+fn words(t: &str) -> std::collections::HashSet<String> {
+    const SKIP: &[&str] = &["the", "and", "for", "with", "from", "into", "this", "that", "our", "all", "any", "out", "get"];
+    t.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 3 && !SKIP.contains(w))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The open task whose wording overlaps most with `text`, if it overlaps enough to be the same task.
+fn closest_task<'a>(text: &str, open: &'a [String]) -> Option<(&'a String, f64)> {
+    let a = words(text);
+    open.iter()
+        .map(|t| {
+            let b = words(t);
+            let inter = a.intersection(&b).count() as f64;
+            let union = a.union(&b).count().max(1) as f64;
+            (t, inter / union)
+        })
+        .max_by(|x, y| x.1.total_cmp(&y.1))
+}
+
+impl Framework {
+    pub fn to_json(&self) -> Value {
+        json!({
+            "type": self.kind,
+            "type_by": self.kind_by.0,
+            "type_p": self.kind_by.1,
+            "deliverable": self.deliverable,
+            "deadline": self.deadline,
+            "summary": self.summary,
+            "milestones": self.milestones.iter().zip(&self.repeats).map(|(m, r)| json!({ "text": m.text, "due": m.due, "repeats": r })).collect::<Vec<_>>(),
+            "assumptions": self.assumptions,
+        })
+    }
+}
+
+fn read_framework(v: &Value, jev: Option<&jev::Pick>) -> Framework {
+    let valid = |k: &str| crate::project::KINDS.iter().any(|x| x.id == k);
+    let kind = v["type"].as_str().filter(|k| valid(k)).or_else(|| jev.map(|p| p.choice.as_str())).unwrap_or("other").to_string();
+    let kind_by = match jev {
+        Some(p) if p.choice == kind => ("jev", p.ranked.first().map(|r| r.1)),
+        _ => ("model", None),
+    };
+    let tasks: Vec<NewTask> = read_filing(&json!({ "tasks": v["milestones"] }), &[]).tasks.into_iter().take(10).collect();
+    Framework {
+        repeats: vec![None; tasks.len()],
+        kind,
+        kind_by,
+        deliverable: text_field(v, "deliverable"),
+        deadline: due_field(&json!({ "due": v["deadline"] })),
+        summary: text_field(v, "summary"),
+        milestones: tasks,
+        assumptions: v["assumptions"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).take(6).collect()).unwrap_or_default(),
+    }
+}
+
+/// Propose a framework for a project: its kind, deliverable, deadline, overview and milestones.
+/// `project` is the project's fields (it may not exist yet); `tasks` are its existing tasks.
+pub async fn plan_project(ai: &Ai, project: &Map<String, Value>, tasks: &[Doc]) -> Result<Framework> {
+    let chat = ai.writer("Suggesting a framework")?;
+    let today = today_days();
+    let field = |k: &str| logic::s(project, k);
+    let mut about = String::new();
+    for (k, label, n) in [("name", "Name", 200), ("goal", "Goal", 1500), ("deliverable", "Deliverable", 400), ("summary", "Overview", 2500), ("context", "Context", 1000), ("notes", "Notes", 2500), ("deadline", "Deadline", 20)] {
+        if let Some(v) = field(k) {
+            about.push_str(&format!("{label}: {}\n", v.chars().take(n).collect::<String>()));
+        }
+    }
+    let mut listed: Vec<&Doc> = tasks.iter().collect();
+    listed.sort_by_key(|(_, m)| logic::stage(m) == "done");
+    let task_lines: Vec<String> = listed
+        .iter()
+        .take(40)
+        .map(|(_, m)| {
+            let due = logic::s(m, "due").map(|d| format!(" | due {d}")).unwrap_or_default();
+            format!("- [{}] {}{due}", logic::stage_label(logic::stage(m)), logic::s(m, "text").unwrap_or(""))
+        })
+        .collect();
+    let kinds: Vec<String> = crate::project::KINDS.iter().map(|k| format!("- {}: {}. Usual stages: {}.", k.id, k.about, k.stages)).collect();
+    let mut user = format!(
+        "Today is {} {}.\n\nKinds:\n{}\n\nProject:\n{about}\nExisting tasks:\n{}\n",
+        weekday_name(today),
+        iso_from_days(today),
+        kinds.join("\n"),
+        if task_lines.is_empty() { "(none yet)".to_string() } else { task_lines.join("\n") }
+    );
+    let mut pick = None;
+    if let Some(j) = &ai.jev {
+        let state = json!({
+            "project": {
+                "name": field("name"), "goal": field("goal"), "deliverable": field("deliverable"), "overview": field("summary"),
+                "context": field("context"), "deadline": field("deadline"),
+                "tasks": listed.iter().take(40).filter_map(|(_, m)| logic::s(m, "text")).collect::<Vec<_>>(),
+            }
+        });
+        let kinds: Vec<(&str, &str)> = crate::project::KINDS.iter().map(|k| (k.id, k.about)).collect();
+        if let Ok(r) = j.read_project(state, &kinds).await {
+            user.push_str(&r.facts());
+            pick = r.kind;
+        }
+    }
+    let v = chat.chat_json(FRAMEWORK_SYSTEM, &user, 1500).await?;
+    let mut f = read_framework(&v, pick.as_ref());
+    // Milestones that repeat an open task are offered unticked: by wording, and by Jev's judgment.
+    let open: Vec<String> = tasks.iter().filter(|(_, m)| logic::is_open(m)).filter_map(|(_, m)| logic::s(m, "text").map(str::to_string)).collect();
+    let texts: Vec<String> = f.milestones.iter().map(|m| m.text.clone()).collect();
+    let judged = match &ai.jev {
+        Some(j) => j.already_tasks(&texts, &open).await.unwrap_or_else(|_| vec![None; texts.len()]),
+        None => vec![None; texts.len()],
+    };
+    for (i, m) in texts.iter().enumerate() {
+        let near = closest_task(m, &open);
+        let same = near.map_or(false, |(_, overlap)| overlap >= 0.6) || judged[i].map_or(false, |p| p >= jev::YES);
+        if same {
+            f.repeats[i] = near.map(|(t, _)| t.clone());
+        }
+    }
+    Ok(f)
+}
+
 /// What's been done so far in a task's project folder (`dirs`, e.g. scripts/ and notebooks/).
 pub fn task_progress(projects: &[Doc], item: &Map<String, Value>, dirs: &[String]) -> Option<Progress> {
     let pid = logic::s(item, "project")?;
@@ -734,6 +892,29 @@ mod tests {
         let f = decide(NOTE, &projects(), None, Some(&jev(0.9, "rnaseq", 0.06, json!({"rnaseq": 0.53, "tox": 0.47}))));
         assert_eq!(f.tasks, one(NOTE, None));
         assert_eq!(f.triage.unwrap().reason, "It could be RNAseq or Tox.");
+    }
+
+    #[test]
+    fn reads_a_framework() {
+        let v = json!({"type": "presentation", "deliverable": "Lab meeting talk", "deadline": "2026-11-12", "summary": "A talk.",
+            "milestones": [{"task": "Storyboard", "due": "2026-11-03"}, {"task": "Rehearse", "due": null}], "assumptions": ["Guessed the length"]});
+        let jev = jev::read_pick(&json!({"choice": "presentation", "confidence": 0.7, "probabilities": {"presentation": 0.8, "report": 0.2}}));
+        let f = read_framework(&v, jev.as_ref());
+        assert_eq!((f.kind.as_str(), f.kind_by), ("presentation", ("jev", Some(0.8))));
+        assert_eq!(f.milestones, vec![NewTask { text: "Storyboard".into(), due: Some("2026-11-03".into()) }, NewTask { text: "Rehearse".into(), due: None }]);
+        assert_eq!(f.deadline.as_deref(), Some("2026-11-12"));
+        assert_eq!(f.repeats, vec![None, None]);
+        // an unknown kind falls back to Jev's, then to "other"; a made-up deadline string is dropped
+        let f = read_framework(&json!({"type": "novel", "deadline": "soon"}), None);
+        assert_eq!((f.kind.as_str(), f.kind_by.0, f.deadline), ("other", "model", None));
+    }
+
+    #[test]
+    fn spots_milestones_that_repeat_tasks() {
+        let open = vec!["Settle authorship, one-paper-vs-two, and a submission deadline".to_string(), "Email Sonia the plots".to_string()];
+        let (t, o) = closest_task("Settle authorship, one paper vs two, and the submission deadline", &open).unwrap();
+        assert!(t.starts_with("Settle authorship") && o >= 0.6, "{o}");
+        assert!(closest_task("Draft the introduction and discussion", &open).unwrap().1 < 0.6);
     }
 
     #[test]

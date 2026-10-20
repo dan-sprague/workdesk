@@ -116,7 +116,20 @@ rep("""    for(const p of ordered()){
       if(editingProj===p.id){ html+=projForm(p); continue; }
       const all=items.filter(i=>i.project===p.id);""")
 rep("""<span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier)}</span>${dl}</div></div>""",
-    """<span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dl}<button class="mini" data-pedit="${esc(p.id)}" type="button">Edit</button></div></div>""")
+    """<span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dl}${!(p.deliverable||'').trim()&&(p.status==='active'||p.status==='wrapping'||!p.status)?`<button class="chip soon nodeliv" type="button" data-setup="${esc(p.id)}" title="What will this project produce? Click to suggest a framework.">no deliverable</button>`:''}<button class="mini" data-pedit="${esc(p.id)}" type="button">Edit</button></div></div>""")
+
+# ---- deliverables: a warning for active projects without one, and a framework to set one ----
+rep("""    if(empties.length) out.push({lv:'info',type:'group',""",
+    """    for(const p of ordered()){
+      if(!(p.status==='active'||p.status==='wrapping'||!p.status) || snoozed(p) || (p.deliverable||'').trim()) continue;
+      out.push({lv:'info',type:'project',id:p.id,proj:p.id,title:p.name,detail:'No deliverable yet: what will this project produce?',setup:true});
+    }
+    if(empties.length) out.push({lv:'info',type:'group',""")
+rep("""        ${a.plan?`<button class="mini primary" data-act="plan" data-k="${k}">Plan dates</button>`:''}""",
+    """        ${a.plan?`<button class="mini primary" data-act="plan" data-k="${k}">Plan dates</button>`:''}
+        ${a.setup?`<button class="mini primary" data-act="setup" data-k="${k}">Suggest a framework</button>`:''}""")
+rep("""    if(b.dataset.act==='open'){ filter=a.proj;""", """    if(b.dataset.act==='setup'){ openFramework(a.id); return; }
+    if(b.dataset.act==='open'){ filter=a.proj;""")
 rep("""'<p class="empty">No projects yet. Tell Claude in the project chat what you are working on and they will appear here.</p>'""",
     """'<p class="empty">No projects yet. Use “+ New project” to add one.</p>'""")
 rep("""    if(!db){ $('projects').innerHTML='<p class="empty">Open this page from claude.ai while signed in to see your projects.</p>'; $('due-list').innerHTML=$('next-list').innerHTML='<li class="empty">Sign in on claude.ai to load your tasks.</li>'; return; }
@@ -213,7 +226,7 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
   let aiOn=false, chatOn=false, keysOpen=false, projectsRoot='~/Documents/Projects/Repos', editorName='Visual Studio Code';
   async function loadStatus(){
     try{
-      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName;
+      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName; projectKinds=s.kinds||projectKinds;
       $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
       $('chat-now').innerHTML=s.chat?`Using ${esc(s.chat)}. <button class="linkish" type="button" data-forget="chat">Remove</button>`:'No key yet.';
       $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
@@ -247,6 +260,8 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
       setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
     }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
+    const su=e.target.closest('[data-setup]');
+    if(su){ openFramework(su.dataset.setup); return; }
     const snd=e.target.closest('[data-sound]');
     if(snd){ setSound(!soundOn()); snd.textContent=soundOn()?'Sound on':'Sound off'; if(soundOn()) chime(false); return; }
     const dn=e.target.closest('[data-done]');
@@ -400,13 +415,15 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     return `<form class="proj proj-form" id="proj-form" data-id="${esc(p.id||'')}" style="--h:${p.id?hue(p.id):240}">
       <div class="field"><label for="pf-name">Name</label><input id="pf-name" name="name" value="${esc(d.name||'')}" required></div>
       <div class="field"><label for="pf-goal">Goal</label><textarea id="pf-goal" name="goal" rows="2">${esc(d.goal||'')}</textarea></div>
+      <div class="field"><label for="pf-deliv">Deliverable (the one thing it produces)</label><input id="pf-deliv" name="deliverable" value="${esc(d.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology"></div>
       <div class="pf-row">
         <div class="field"><label for="pf-deadline">Deadline</label><input type="date" id="pf-deadline" name="deadline" value="${esc(d.deadline||'')}"></div>
         <div class="field"><label for="pf-tier">Tier</label><select id="pf-tier" name="tier">${opt(['major','standard'],d.tier||'standard')}</select></div>
         <div class="field"><label for="pf-status">Status</label><select id="pf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
       </div>
       <div class="field"><label for="pf-context">Notes (repo, people, links)</label><input id="pf-context" name="context" value="${esc(d.context||'')}"></div>
-      ${p.id?'':`<label class="pf-check"><input type="checkbox" name="make_folder" ${d.make_folder===false?'':'checked'}> Create a project folder with a git repo in <code>${esc(projectsRoot)}</code></label>`}
+      ${p.id?'':`<label class="pf-check"><input type="checkbox" name="plan" ${d.plan===false||!chatOn?'':'checked'} ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}> Suggest a framework: kind of project, deliverable and milestones</label>
+      <label class="pf-check"><input type="checkbox" name="make_folder" ${d.make_folder===false?'':'checked'}> Create a project folder with a git repo in <code>${esc(projectsRoot)}</code></label>`}
       ${!p.id&&projMove.length?`<p class="hint" style="margin:0">${projMove.length===1?'The Inbox note':`The ${projMove.length} Inbox notes`} that suggested it will move into the new project.</p>`:''}
       <div class="compose-row"><button class="btn" type="submit">${p.id?'Save':'Add project'}</button><button class="ghost" type="button" data-pcancel>Cancel</button></div>
     </form>`;
@@ -428,14 +445,20 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     if(e.target.id!=='proj-form') return;
     e.preventDefault();
     const f=new FormData(e.target), data={};
-    for(const k of ['name','goal','deadline','tier','status','context']) data[k]=(f.get(k)||'').toString().trim();
+    for(const k of ['name','goal','deliverable','deadline','tier','status','context']) data[k]=(f.get(k)||'').toString().trim();
     if(!data.name) return;
     const id=e.target.dataset.id;
     try{
       if(id) await db.doc('projects/'+id).update(data);
       else{
-        const r=await db.collection('projects').add({...data, order:Math.max(0,...projects.map(p=>p.order||0))+1, make_folder:f.get('make_folder')==='on', move:projMove});
-        if(projMove.length) await db.refreshAll();
+        const body={...data, order:Math.max(0,...projects.map(p=>p.order||0))+1, make_folder:f.get('make_folder')==='on', move:projMove};
+        if(f.get('plan')==='on'){
+          const fw=await askFramework({name:data.name, deadline:data.deadline, deliverable:data.deliverable, wantFolder:body.make_folder}, {project:data});
+          if(!fw) return; // cancelled: the form stays as it was
+          Object.assign(body, {type:fw.type, deliverable:fw.deliverable, deadline:fw.deadline||data.deadline, summary:fw.summary, milestones:fw.milestones, make_folder:fw.make_folder});
+        }
+        const r=await db.collection('projects').add(body);
+        if(projMove.length||body.milestones?.length) await db.refreshAll();
         if(r?.notice) toast(r.notice, /^Couldn|^Didn|couldn/.test(r.notice));
       }
       editingProj=null; projDraft={}; projMove=[]; renderDesk();
@@ -455,6 +478,7 @@ rep("  <!-- TIMELINE VIEW -->", """  <!-- PROJECT PAGE -->
   <div id="proj-view" hidden></div>
   <dialog id="task-dlg" class="tdlg" aria-label="Task details"></dialog>
   <dialog id="file-dlg" class="tdlg fdlg" aria-label="Where does this note go?"></dialog>
+  <dialog id="plan-dlg" class="tdlg fdlg" aria-label="Project framework"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="drop-hint" id="drop-hint" hidden></div>
 

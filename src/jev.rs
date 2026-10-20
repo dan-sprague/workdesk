@@ -177,6 +177,32 @@ fn task_state(m: &Map<String, Value>, project: Option<&Map<String, Value>>) -> V
     })
 }
 
+// ---------- projects ----------
+
+const PROJECT_KIND: &str = "What kind of project is `project`, judging from its name, goal, notes and tasks?";
+const HAS_DELIVERABLE: &str = "Does `project` already say what it will produce: a concrete deliverable such as a \
+paper, slide deck, report, submission, dataset or tool?";
+
+/// Jev's reading of a project before a framework is proposed for it.
+pub struct ProjectReading {
+    pub kind: Option<Pick>,
+    pub has_deliverable: Option<f64>,
+}
+
+impl ProjectReading {
+    pub fn facts(&self) -> String {
+        let mut out = String::from("\nJev's judgments about this project (calibrated probabilities from a separate classifier):\n");
+        if let Some(k) = &self.kind {
+            let top: Vec<String> = k.ranked.iter().take(3).map(|(id, p)| format!("{id} {}", pct(*p))).collect();
+            out.push_str(&format!("- Kind of project: {}\n", top.join(", ")));
+        }
+        if let Some(p) = self.has_deliverable {
+            out.push_str(&format!("- It already says what it will produce: {}\n", pct(p)));
+        }
+        out
+    }
+}
+
 // ---------- prompts ----------
 
 const KIND: &str = "What kind of work is `task`?";
@@ -372,6 +398,32 @@ impl Jev {
         }
         store.merge_many("items", &patches)?;
         Ok((patches.len(), err))
+    }
+
+    /// For each proposed milestone, the probability that it's the same work as one of `open` (task texts).
+    pub async fn already_tasks(&self, milestones: &[String], open: &[String]) -> Result<Vec<Option<f64>>> {
+        if milestones.is_empty() || open.is_empty() {
+            return Ok(vec![None; milestones.len()]);
+        }
+        let mut q = Map::new();
+        for i in 0..milestones.len() {
+            q.insert(
+                format!("same_{i}"),
+                noul(&format!("Is `milestones[{i}]` the same piece of work as one of `open_tasks`, even if it's worded differently?")),
+            );
+        }
+        let open: Vec<&String> = open.iter().take(150).collect();
+        let a = self.ask(json!({ "milestones": milestones, "open_tasks": open }), q).await?;
+        Ok((0..milestones.len()).map(|i| a.noul(&format!("same_{i}"))).collect())
+    }
+
+    /// What kind of project this is (`kinds`: id and description) and whether it names a deliverable.
+    pub async fn read_project(&self, state: Value, kinds: &[(&str, &str)]) -> Result<ProjectReading> {
+        let mut q = Map::new();
+        q.insert("kind".into(), choice(PROJECT_KIND, kinds.iter().map(|(k, d)| (k.to_string(), json!(d))).collect()));
+        q.insert("has_deliverable".into(), noul(HAS_DELIVERABLE));
+        let a = self.ask(state, q).await?;
+        Ok(ProjectReading { kind: a.choice("kind"), has_deliverable: a.noul("has_deliverable") })
     }
 
     /// What kind of work a task is, whether it's vague, which of `files` it needs, and, from
