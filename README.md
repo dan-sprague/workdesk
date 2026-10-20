@@ -1,11 +1,12 @@
 # Work Desk
 
-Your projects, kanban board, timeline and sticky notes as one `desk` command on your Mac.
-DeepSeek files your notes into the right project and writes a start-of-day brief.
+Your projects, kanban board, timeline and sticky notes as a Mac app (**Work Desk.app**) and a `desk`
+command. DeepSeek files your notes into the right project and writes a start-of-day brief.
 
-It opens in your browser, but it runs only on your computer. Everything — every project and task — is
-kept in one readable file, `workdesk.json`, which you can keep in Google Drive (see below). Nothing else
-leaves your Mac except the text sent to DeepSeek when it files a note or writes a brief.
+Open it as its own window, or in your browser with `desk`. Either way it runs only on your computer.
+Everything — every project and task — is kept in one readable file, `workdesk.json`, which you can keep
+in Google Drive (see below). Nothing else leaves your Mac except the text sent to DeepSeek when it files
+a note or writes a brief.
 
 ## Install (once)
 
@@ -15,15 +16,31 @@ cd workdesk
 ```
 
 If Rust isn't installed, the script tells you the one command to install it.
+It installs the `desk` command and puts **Work Desk.app** in your Applications folder (`~/Applications`).
 Then:
 
 ```bash
 desk key sk-your-deepseek-key   # or paste it into the page
-desk                            # opens the Work Desk
 ```
+
+and open **Work Desk** from Spotlight, Launchpad or Finder. Drag it to the Dock to keep it there.
+To use your browser instead, run `desk`.
 
 It starts with your 7 projects and 15 Natural History tasks, copied from the Work Desk on claude.ai
 on Oct 13.
+
+## The desktop app
+
+Work Desk.app is the same page in its own window, with the usual Mac menus: ⌘C/⌘V/⌘Z in the note
+boxes, ⌘R to reload, ⌘+ / ⌘− / ⌘0 to zoom, ⌘W or ⌘Q to close. It uses the same data file, key and
+settings as `desk`. The app and a browser tab can be open at the same time: changes made in one appear
+in the other within a few seconds.
+
+- `desk app` opens the same window from the terminal.
+- After a `git pull`, run `./build.sh` again to update both the app and the `desk` command.
+- If the app can't read your data file, it says why in a dialog and quits instead of starting empty.
+- Apps opened from the Dock don't see variables set in your shell, so the app ignores `DEEPSEEK_API_KEY`
+  and `WORKDESK_FILE`. Use `desk key` and `desk drive` / `desk use-file`, which save to your settings.
 
 ## Keep it in Google Drive
 
@@ -75,6 +92,7 @@ running; it notices the change.
 | Command | What it does |
 |---|---|
 | `desk` | Opens the Work Desk in your browser (leave the terminal window open) |
+| `desk app` | Opens it in its own window, like Work Desk.app |
 | `desk add "tox plots for Sonia by Friday"` | Files a sticky note; DeepSeek picks the project and the due date |
 | `desk add -p nh "check MRC 5 crossing code"` | Files it under a project yourself (an id or part of a name) |
 | `desk today` | What's overdue, due soon, stalled and next, in the terminal |
@@ -92,6 +110,24 @@ On the page:
   Use **+ New project** and **Edit** to set goals and deadlines.
 - **Board**: To do / In progress / Review / Done across all projects, with project filters.
 - **Timeline**: Gantt bars, deadlines, and **Draft schedule**.
+- **Project pages**: click a project name on the Desk to open its own page — overview, its four lanes,
+  notes, linked files and what's coming up. Each page has its own address (`#/p/<project id>`).
+- **Task details**: click any card, or the **›** button on a Desk row, for notes, dates, stage and files.
+
+## Linking files
+
+Tasks and projects can point at the real work: scripts, drafts, figures, data folders and web links.
+
+- **Link files…** / **Link folder…** opens a Mac file chooser; or paste a path or URL into the box.
+- In the desktop app you can also **drag files from Finder** onto a task card, onto a project page, or
+  onto an open task.
+- Clicking a linked file opens it in whatever app usually opens it; **Show** reveals it in Finder.
+- Paths under your home folder are stored as `~/…`, so they still work on another Mac with the same
+  folders. A file that isn't on this computer is shown struck through and marked, rather than silently
+  doing nothing.
+- A project can also have one **project folder**, shown in Details.
+- Unlinking removes the link only. Work Desk never moves, changes or deletes the file itself.
+- For safety, Work Desk will only open a file that something in your data actually links to.
 
 “Sort it for me” in any note box sends the note to DeepSeek. If it can't tell where a note goes, or there's
 no key yet, the note waits in the Inbox.
@@ -106,5 +142,9 @@ no key yet, the note waits in the Inbox.
 ## Notes
 
 - This copy is separate from the Work Desk page on claude.ai. Changes here don't show up there.
-- The server only answers on `localhost` and rejects requests from other websites.
-- `ui/index.html` is generated from `ui/source.html` (the claude.ai page) by `ui/build_ui.py`.
+- The browser version's server only answers on `localhost` and rejects requests from other websites.
+  The desktop app doesn't open a port at all: its window talks to Work Desk directly.
+- To change the app icon, edit and rerun `macos/make_icon.py` (needs Pillow).
+- `ui/index.html` is generated from `ui/source.html` (the claude.ai page) by `ui/build_ui.py`, which
+  also splices in `ui/project.js` and `ui/project.css` (project pages, task details and linked files).
+  Edit those three files, not `index.html`.

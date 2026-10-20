@@ -1,6 +1,7 @@
 //! `desk` — Work Desk on your own computer.
 //!
 //!   desk                 open the Work Desk in your browser
+//!   desk app             open it in its own window (what Work Desk.app runs)
 //!   desk add "<note>"    file a sticky note (DeepSeek picks the project)
 //!   desk today           what needs doing today
 //!   desk brief           a start-of-day plan from DeepSeek
@@ -9,6 +10,8 @@
 
 mod ai;
 mod config;
+#[cfg(target_os = "macos")]
+mod desktop;
 mod logic;
 mod server;
 mod store;
@@ -19,6 +22,7 @@ use clap::{Parser, Subcommand};
 use config::Config;
 use serde_json::{json, Map, Value};
 use std::io::IsTerminal;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use store::Store;
 
@@ -42,6 +46,9 @@ enum Cmd {
         #[arg(long)]
         no_browser: bool,
     },
+    /// Open the Work Desk in its own window (this is what Work Desk.app runs)
+    #[cfg(target_os = "macos")]
+    App,
     /// Add a sticky note; DeepSeek picks the project unless you pass --project
     Add {
         /// Project id (see `desk projects`), or "inbox"
@@ -138,24 +145,69 @@ fn need_ai(cfg: &Config, http: &reqwest::Client) -> Result<ai::Ai> {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
+/// True when this binary is the one inside Work Desk.app (…/Work Desk.app/Contents/MacOS/).
+fn in_app_bundle() -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let mut up = exe.ancestors().skip(1).map(Path::file_name);
+    matches!(
+        (up.next().flatten(), up.next().flatten(), up.next().flatten()),
+        (Some(m), Some(c), Some(app)) if m == "MacOS" && c == "Contents" && app.to_string_lossy().ends_with(".app")
+    )
+}
+
+/// Started from Finder or the Dock there is no terminal to print to, so errors get a dialog.
+fn alert(msg: &str) {
+    let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let script = format!("display alert {} message {} as critical", quote("Work Desk couldn't start"), quote(msg));
+    let _ = std::process::Command::new("osascript").args(["-e", &script]).status();
+}
+
+fn main() {
+    // Older macOS passes a -psn_… argument to apps opened from Finder.
+    let cli = Cli::parse_from(std::env::args_os().filter(|a| !a.to_string_lossy().starts_with("-psn_")));
+    let bundled = in_app_bundle();
+    let cmd = match cli.cmd {
+        Some(cmd) => cmd,
+        #[cfg(target_os = "macos")]
+        None if bundled => Cmd::App,
+        None => Cmd::Open { port: 7477, no_browser: false },
+    };
+    let rt = tokio::runtime::Runtime::new().expect("starting the async runtime");
+    let result = match cmd {
+        #[cfg(target_os = "macos")]
+        Cmd::App => run_app(rt),
+        cmd => rt.block_on(run(cmd)),
+    };
+    if let Err(e) = result {
         eprintln!("desk: {e:#}");
+        if bundled {
+            alert(&format!("{e:#}"));
+        }
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<()> {
-    let cli = Cli::parse();
+#[cfg(target_os = "macos")]
+fn run_app(rt: tokio::runtime::Runtime) -> Result<()> {
+    let app = rt.block_on(async {
+        let cfg = Config::load();
+        let store = Arc::new(open_store(&cfg)?);
+        anyhow::Ok(server::App { store, cfg: Arc::new(RwLock::new(cfg)), http: ai::Ai::http_client(), picker: None })
+    })?;
+    desktop::run(app, rt)
+}
+
+async fn run(cmd: Cmd) -> Result<()> {
     let paint = logic::Paint::new(std::io::stdout().is_terminal());
     let cfg = Config::load();
     let http = ai::Ai::http_client();
 
-    match cli.cmd.unwrap_or(Cmd::Open { port: 7477, no_browser: false }) {
+    match cmd {
+        #[cfg(target_os = "macos")]
+        Cmd::App => unreachable!("handled in main"),
         Cmd::Open { port, no_browser } => {
             let store = Arc::new(open_store(&cfg)?);
-            let app = server::App { store, cfg: Arc::new(RwLock::new(cfg)), http };
+            let app = server::App { store, cfg: Arc::new(RwLock::new(cfg)), http, picker: None };
             server::serve(app, port, !no_browser).await?;
         }
         Cmd::Add { project, stage, text } => {

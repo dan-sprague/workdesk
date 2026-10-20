@@ -74,6 +74,16 @@ pub fn expand_home(p: &str) -> PathBuf {
     PathBuf::from(p)
 }
 
+/// Write a path the short way (`~/Documents/...`) so links work on any Mac with the same folders.
+pub fn tilde(p: &std::path::Path) -> String {
+    if let Some(h) = dirs::home_dir() {
+        if let Ok(rest) = p.strip_prefix(&h) {
+            return if rest.as_os_str().is_empty() { "~".into() } else { format!("~/{}", rest.display()) };
+        }
+    }
+    p.display().to_string()
+}
+
 fn config_path() -> PathBuf {
     data_dir().join("config.json")
 }

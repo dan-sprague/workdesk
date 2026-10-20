@@ -3,6 +3,7 @@
 Each replacement must match exactly once, so a drift in the source fails loudly.
 Usage: python3 build_ui.py source.html index.html
 """
+import os
 import sys
 
 src, dst = sys.argv[1], sys.argv[2]
@@ -253,6 +254,56 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
 
   render();
   (async()=>{""")
+
+# ---- project pages, task details and linked files (ui/project.js, ui/project.css) ----
+here = os.path.dirname(os.path.abspath(__file__))
+PROJECT_JS = open(os.path.join(here, "project.js"), encoding="utf-8").read()
+PROJECT_CSS = open(os.path.join(here, "project.css"), encoding="utf-8").read()
+
+rep("  <!-- TIMELINE VIEW -->", """  <!-- PROJECT PAGE -->
+  <div id="proj-view" hidden></div>
+  <dialog id="task-dlg" class="tdlg" aria-label="Task details"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="drop-hint" id="drop-hint" hidden></div>
+
+  <!-- TIMELINE VIEW -->""")
+rep(".proj-form .field input:not([type=date]){width:100%}\n",
+    ".proj-form .field input:not([type=date]){width:100%}\n\n" + PROJECT_CSS)
+# the code goes in early, so its constants exist before anything renders
+rep("  const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };\n",
+    "  const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };\n\n" + PROJECT_JS)
+# cards: click for details, file chips, drop target
+rep("""<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}">""",
+    """<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}" data-drop="items:${esc(it.id)}">""")
+rep('<div class="card-txt">${esc(it.text)}</div>',
+    '<div class="card-txt" data-open="${esc(it.id)}" title="Open details and files">${esc(it.text)}</div>${fileChips(it)}')
+# (card is also called as .map(card), so the project page turns tags off with a flag, not an argument)
+rep("${filter==='all'?tag(it.project):''}", "${(cardTags??filter==='all')?tag(it.project):''}")
+# desk rows: file count and a details button
+rep('return `<li class="row"><input', 'return `<li class="row" data-drop="items:${esc(it.id)}"><input')
+rep('<span class="row-end">${extra||dueChip(it.due)}</span></li>',
+    '<span class="row-end">${fileCount(it)}${extra||dueChip(it.due)}<button class="row-open" type="button" data-open="${esc(it.id)}" '
+    'aria-label="Open details and files" title="Details and files">${ICON.open}</button></span></li>')
+# desk project cards link to their page
+rep('<div class="proj-name"><span class="swatch"></span><h3>${esc(p.name)}</h3></div>',
+    '<div class="proj-name"><span class="swatch"></span><h3><a class="plink" href="${pageHref(p.id)}">${esc(p.name)}</a></h3></div>')
+rep("""<article class="proj ${p.status==='waiting'?'quiet':''}" style="--h:${h}">""",
+    """<article class="proj ${p.status==='waiting'?'quiet':''}" style="--h:${h}" data-drop="projects:${esc(p.id)}">""")
+rep("$('filters').innerHTML=filterChips();", "$('filters').innerHTML=filterChips()+boardPageLink();")
+rep('<div class="compose-row"><button class="ghost" data-clear>Clear dates</button>',
+    '<div class="compose-row"><button class="ghost" data-open="${esc(it.id)}">Details &amp; files</button><button class="ghost" data-clear>Clear dates</button>')
+# views: the project page is a fourth view, reached by #/p/<id>
+rep("  function setView(v){\n    view=v;", "  function setView(v){\n    const was=view; if(v!=='proj') lastView=v;\n    view=v;")
+rep("    try{ localStorage.setItem('wd-view', v); }catch(e){}\n    if(v==='board') renderBoard();",
+    """    $('proj-view').hidden = v!=='proj';
+    if(v!=='proj' && was==='proj' && location.hash) history.replaceState(null,'',location.pathname+location.search);
+    if(v!=='proj') try{ localStorage.setItem('wd-view', v); }catch(e){}
+    if(v==='proj') renderPage();
+    if(v==='board') renderBoard();""")
+rep("if(view==='board') renderBoard(); if(view==='tl') renderTimeline(); }",
+    "if(view==='board') renderBoard(); if(view==='tl') renderTimeline(); if(view==='proj') renderPage(); refreshTaskDlg(); }")
+rep("    db = makeLocalDb(); loadStatus(); showCachedBrief();\n",
+    "    db = makeLocalDb(); loadStatus(); showCachedBrief(); route();\n")
 
 open(dst, "w", encoding="utf-8").write(s)
 print("ok", len(s))

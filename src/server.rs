@@ -2,8 +2,8 @@
 //! Binds to 127.0.0.1 only.
 
 use crate::ai::{self, Ai};
-use crate::config::Config;
-use crate::store::{check_collection, Store};
+use crate::config::{expand_home, tilde, Config};
+use crate::store::{check_collection, Store, COLLECTIONS};
 use crate::util::now_iso;
 use anyhow::Result;
 use axum::{
@@ -15,16 +15,28 @@ use axum::{
     Json, Router,
 };
 use serde_json::{json, Map, Value};
+use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::path::{Path as FsPath, PathBuf};
 use std::sync::{Arc, RwLock};
 
 const PAGE: &str = include_str!("../ui/index.html");
+
+/// A request for the Mac's file chooser. The desktop window answers these with its own
+/// dialog; the browser version falls back to AppleScript's `choose file`.
+pub struct PickRequest {
+    pub folder: bool,
+    pub start: Option<PathBuf>,
+    pub reply: tokio::sync::oneshot::Sender<Vec<PathBuf>>,
+}
+pub type Picker = Arc<dyn Fn(PickRequest) + Send + Sync>;
 
 #[derive(Clone)]
 pub struct App {
     pub store: Arc<Store>,
     pub cfg: Arc<RwLock<Config>>,
     pub http: reqwest::Client,
+    pub picker: Option<Picker>,
 }
 
 impl App {
@@ -167,6 +179,180 @@ async fn settings(State(app): State<App>, Json(body): Json<Value>) -> ApiResult 
     Ok(Json(json!({ "ai": cfg.key().is_some(), "model": cfg.model() })))
 }
 
+// ---------------- linked files ----------------
+// Tasks and projects keep `files: [{path, name}]`, where a path is `~/…`, an absolute
+// path, or a web link. Projects can also have one `folder`.
+
+fn is_link(p: &str) -> bool {
+    p.starts_with("https://") || p.starts_with("http://")
+}
+
+/// Accept paths the way people paste them: quoted, with `\ ` escapes, or as file:// URLs.
+fn clean_path(raw: &str) -> String {
+    let mut p = raw.trim().trim_matches(|c| c == '"' || c == '\'').to_string();
+    if let Some(rest) = p.strip_prefix("file://") {
+        let rest = rest.strip_prefix("localhost").unwrap_or(rest);
+        let bytes = rest.as_bytes();
+        let mut out = Vec::with_capacity(bytes.len());
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'%' && i + 2 < bytes.len() {
+                if let Ok(b) = u8::from_str_radix(&rest[i + 1..i + 3], 16) {
+                    out.push(b);
+                    i += 3;
+                    continue;
+                }
+            }
+            out.push(bytes[i]);
+            i += 1;
+        }
+        p = String::from_utf8_lossy(&out).into_owned();
+    }
+    if !is_link(&p) {
+        p = p.replace("\\ ", " ");
+        if p.len() > 1 {
+            p = p.trim_end_matches('/').to_string();
+        }
+    }
+    p
+}
+
+/// The form a path is stored and compared in: `~/…` when it is under the home folder.
+fn normalize(raw: &str) -> String {
+    let p = clean_path(raw);
+    if is_link(&p) {
+        p
+    } else {
+        tilde(&expand_home(&p))
+    }
+}
+
+/// Everything the data links to. /api/open only opens these.
+fn linked(store: &Store) -> anyhow::Result<HashSet<String>> {
+    let mut out = HashSet::new();
+    for coll in COLLECTIONS {
+        for (_, doc) in store.list(coll)? {
+            if let Some(Value::Array(files)) = doc.get("files") {
+                out.extend(files.iter().filter_map(|f| f.get("path")?.as_str()).map(normalize));
+            }
+            if let Some(f) = doc.get("folder").and_then(Value::as_str).filter(|f| !f.is_empty()) {
+                out.insert(normalize(f));
+            }
+        }
+    }
+    Ok(out)
+}
+
+fn display_name(p: &str) -> String {
+    if is_link(p) {
+        let rest = p.split_once("://").map(|x| x.1).unwrap_or(p);
+        return rest.trim_end_matches('/').chars().take(60).collect();
+    }
+    FsPath::new(p).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.to_string())
+}
+
+/// For each path: its stored form, display name, and whether it is there on this computer.
+async fn stat(Json(body): Json<Value>) -> ApiResult {
+    let paths = body.get("paths").and_then(Value::as_array).ok_or_else(|| bad("Expected {\"paths\": [...]}"))?;
+    let out: Vec<Value> = paths
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|raw| {
+            let path = normalize(raw);
+            if is_link(&path) {
+                return json!({ "input": raw, "path": path, "name": display_name(&path), "link": true, "exists": true });
+            }
+            let full = expand_home(&path);
+            let md = std::fs::metadata(&full).ok();
+            json!({
+                "input": raw,
+                "path": path,
+                "name": display_name(&path),
+                "exists": md.is_some(),
+                "dir": md.as_ref().map_or(false, |m| m.is_dir()),
+                "absolute": full.is_absolute(),
+            })
+        })
+        .collect();
+    Ok(Json(Value::Array(out)))
+}
+
+async fn open_linked(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let raw = body.get("path").and_then(Value::as_str).ok_or_else(|| bad("Which file?"))?;
+    let reveal = body.get("reveal").and_then(Value::as_bool).unwrap_or(false);
+    let path = normalize(raw);
+    if !linked(&app.store)?.contains(&path) {
+        return Err(ApiError(StatusCode::FORBIDDEN, "Only files linked to a task or project can be opened from Work Desk.".into()));
+    }
+    if is_link(&path) {
+        open_url(&path);
+        return Ok(Json(json!({ "opened": path })));
+    }
+    let full = expand_home(&path);
+    if !full.exists() {
+        return Err(ApiError(StatusCode::NOT_FOUND, format!("{path} isn't on this computer. It may have been moved or renamed.")));
+    }
+    open_path(&full, reveal);
+    Ok(Json(json!({ "opened": path })))
+}
+
+async fn pick(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let folder = body.get("folder").and_then(Value::as_bool).unwrap_or(false);
+    let start = body
+        .get("start")
+        .and_then(Value::as_str)
+        .map(|s| expand_home(&clean_path(s)))
+        .map(|p| if p.is_dir() { p } else { p.parent().map(FsPath::to_path_buf).unwrap_or(p) })
+        .filter(|p| p.is_dir())
+        .or_else(|| dirs::document_dir().filter(|d| d.is_dir()));
+    let paths = match &app.picker {
+        Some(picker) => {
+            let (reply, rx) = tokio::sync::oneshot::channel();
+            picker(PickRequest { folder, start, reply });
+            rx.await.unwrap_or_default()
+        }
+        None => tokio::task::spawn_blocking(move || choose_with_applescript(folder, start.as_deref()))
+            .await
+            .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??,
+    };
+    Ok(Json(json!({ "paths": paths.iter().map(|p| tilde(p)).collect::<Vec<_>>() })))
+}
+
+/// The browser version's file chooser. Cancelling returns no paths.
+fn choose_with_applescript(folder: bool, start: Option<&FsPath>) -> Result<Vec<PathBuf>, ApiError> {
+    if !cfg!(target_os = "macos") {
+        return Err(bad("Choosing files needs a Mac. Paste the path instead."));
+    }
+    let what = if folder { "choose folder" } else { "choose file" };
+    let script = format!(
+        r#"on run argv
+  activate
+  if (count of argv) > 0 then
+    set picked to {what} with prompt "Link to Work Desk" default location (POSIX file (item 1 of argv)) with multiple selections allowed
+  else
+    set picked to {what} with prompt "Link to Work Desk" with multiple selections allowed
+  end if
+  set out to ""
+  repeat with f in picked
+    set out to out & POSIX path of f & linefeed
+  end repeat
+  return out
+end run"#
+    );
+    let mut cmd = std::process::Command::new("osascript");
+    cmd.arg("-e").arg(script);
+    if let Some(s) = start {
+        cmd.arg(s);
+    }
+    let out = cmd.output().map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if !out.status.success() {
+        // -128 is "User canceled"
+        let err = String::from_utf8_lossy(&out.stderr);
+        return if err.contains("-128") { Ok(vec![]) } else { Err(ApiError(StatusCode::INTERNAL_SERVER_ERROR, err.trim().to_string())) };
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).lines().filter(|l| !l.is_empty()).map(PathBuf::from).collect())
+}
+
 pub fn router(app: App) -> Router {
     Router::new()
         .route("/", get(index))
@@ -175,10 +361,34 @@ pub fn router(app: App) -> Router {
         .route("/api/settings", post(settings))
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
+        .route("/api/stat", post(stat))
+        .route("/api/open", post(open_linked))
+        .route("/api/pick", post(pick))
         .route("/api/:coll", get(list).post(create))
         .route("/api/:coll/:id", patch(update).delete(remove))
         .layer(middleware::from_fn(guard))
         .with_state(app)
+}
+
+/// Open a file or folder with its default app, or show it in Finder.
+pub fn open_path(path: &FsPath, reveal: bool) {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = std::process::Command::new("open");
+        if reveal {
+            c.arg("-R");
+        }
+        c.arg(path);
+        c
+    };
+    #[cfg(not(target_os = "macos"))]
+    let mut cmd = {
+        let target = if reveal { path.parent().unwrap_or(path) } else { path };
+        let mut c = std::process::Command::new("xdg-open");
+        c.arg(target);
+        c
+    };
+    let _ = cmd.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
 }
 
 pub fn open_url(url: &str) {
