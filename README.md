@@ -216,12 +216,33 @@ with a **no deliverable** chip on their card and a warning on their page.
 
 - the **kind** of project: research paper, analysis or pipeline, presentation, report or regulatory
   document, grant, simple task, or other (Jev decides when there's a key; you can change it);
+- your **role**: leading the project, or contributing a part (a few analyses, figures or a section) to
+  work someone else leads. For a contribution, the deliverable and milestones cover only your part;
 - the **deliverable**, **deadline** (only if the project states one) and a short **overview**;
 - **milestones**: the 3 to 8 steps from where the project stands to the deliverable, following the usual
   stages for its kind, dated back from the deadline. Steps that repeat an existing task are left unticked;
 - a **folder** laid out for that kind (below).
 
 Everything is editable in the window, and nothing changes until you press **Apply**.
+
+## Closing out a project
+
+**Close out…** on a project's page (or **Close out** when **Needs attention** says every task is done)
+wraps a project up:
+
+- **Deliverable** and **final version**: confirm what was delivered and link the final file, folder or URL.
+  It's added to the project's files so you can open it later.
+- **Loose ends**: each open task is marked done, moved to another project or the Inbox, or dropped (kept
+  in history, not counted as done). With a Jev key, Jev suggests which: whether each is still worth doing,
+  and which project it belongs with now.
+- **Wrap-up**: the chat model drafts a short record (what was delivered, where it lives, what was done,
+  decisions worth remembering) from the project's tasks, notes and commits. Edit it as you like.
+- **CLOSEOUT.md** goes into the project folder with the wrap-up and the loose ends. If the folder is a git
+  repo, that file alone is committed and the final state is tagged `closeout-<date>`. Uncommitted work is
+  listed but never swept in, and nothing is pushed.
+
+The project is then marked done (its page shows the close-out record) and you get the big confetti.
+**Reopen** puts it back to active and keeps the record.
 
 ## Project folders
 

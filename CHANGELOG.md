@@ -23,6 +23,13 @@ Releases are tagged `vX.Y.Z` on `main`.
   document, grant, simple task, other; Jev decides the kind), the deliverable, deadline, overview, and
   milestones dated back from the deadline (repeats of existing tasks left unticked), plus a folder laid out
   for that kind. It runs for new projects and from any project's page; nothing changes until you apply it.
+- **Your role.** Frameworks ask whether you lead the project or contribute a part to someone else's (Jev
+  judges it); for a contribution, the deliverable and milestones cover only your part.
+- **Close out a project.** Confirm the deliverable and link the final version, decide each loose end (done,
+  move, or drop; Jev suggests), keep an edited wrap-up, and write CLOSEOUT.md into the folder, committed on
+  its own and tagged `closeout-<date>`. Projects whose tasks are all done prompt you to close them out.
+- **No finishing by stray click.** Clicking a task opens its details; tasks are finished with Mark done or
+  by dragging to Done.
 - **Folders for existing projects.** **Create a project folder** on the project page, or `desk folder`.
 - **Project work folders.** New projects get `~/Documents/Projects/Repos/<name>` with a standard
   research layout, set up as a git repo with a first commit. `desk new`.

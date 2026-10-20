@@ -614,8 +614,9 @@ pub async fn plan_project(ai: &Ai, project: &Map<String, Value>, tasks: &[Doc]) 
 }
 
 const CLOSEOUT_SYSTEM: &str = "You write the close-out record for a finished research project, for the \
-researcher's own files. Plain text, short and factual, in the researcher's voice. Use exactly these headings, \
-each followed by a few lines:\n\
+researcher's own files. Plain text, short and factual, in the researcher's voice. Start straight with the \
+Delivered heading; don't repeat the project's name, dates or other details given above it. Use exactly these \
+headings, each followed by a few lines:\n\
 Delivered: what was produced and for whom, from the deliverable and the finished work.\n\
 Where it lives: the folder, final files, repository or links that are mentioned; write [add the link] if none is.\n\
 What was done: 3 to 6 bullets (lines starting with '- ') naming the main pieces of work, from the finished tasks \
@@ -652,7 +653,15 @@ pub async fn closeout_summary(ai: &Ai, p: &Map<String, Value>, tasks: &[&Doc], p
         ctx.push_str(&pr.text());
     }
     let v = chat.chat_json(CLOSEOUT_SYSTEM, &ctx, 1200).await?;
-    text_field(&v, "summary").ok_or_else(|| anyhow!("The wrap-up came back empty."))
+    text_field(&v, "summary").map(|t| from_delivered(&t)).ok_or_else(|| anyhow!("The wrap-up came back empty."))
+}
+
+/// Drop anything a model echoed back above the "Delivered:" heading (project name, dates, …).
+fn from_delivered(t: &str) -> String {
+    match t.find("Delivered:") {
+        Some(i) if i > 0 && t[..i].ends_with('\n') => t[i..].trim().to_string(),
+        _ => t.trim().to_string(),
+    }
 }
 
 /// What's been done so far in a task's project folder (`dirs`, e.g. scripts/ and notebooks/).
@@ -963,6 +972,13 @@ mod tests {
         // a paper the researcher only contributes to stays a paper
         let f = read_framework(&json!({"type": "paper", "role": "contributor"}), None);
         assert_eq!((f.kind.as_str(), f.role), ("paper", "contributor"));
+    }
+
+    #[test]
+    fn wrap_up_starts_at_delivered() {
+        assert_eq!(from_delivered("Closed: 2026-10-20\nProject: X\n\nDelivered: a talk.\n\nWhere it lives: ~/x"), "Delivered: a talk.\n\nWhere it lives: ~/x");
+        assert_eq!(from_delivered("Delivered: a talk."), "Delivered: a talk.");
+        assert_eq!(from_delivered("We Delivered: oddly placed"), "We Delivered: oddly placed");
     }
 
     #[test]
