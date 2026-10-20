@@ -34,6 +34,9 @@ pub struct Config {
     /// Hours of project work in a typical day, for planning against deadlines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hours_per_day: Option<f64>,
+    /// Folders in a project folder read for progress when drafting a prompt (default scripts, notebooks).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_dirs: Option<Vec<String>>,
     /// The Mac app that "Open in editor" uses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
@@ -175,6 +178,13 @@ impl Config {
 
     pub fn hours_per_day(&self) -> f64 {
         self.hours_per_day.filter(|h| *h > 0.0 && *h <= 24.0).unwrap_or(4.0)
+    }
+
+    pub fn progress_dirs(&self) -> Vec<String> {
+        match self.progress_dirs.as_ref().filter(|d| !d.is_empty()) {
+            Some(d) => d.clone(),
+            None => crate::progress::DEFAULT_DIRS.iter().map(|s| s.to_string()).collect(),
+        }
     }
 
     pub fn editor(&self) -> String {

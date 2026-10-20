@@ -12,7 +12,8 @@
   };
   const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
   let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
-  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null;
+  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null, promptMode='';
+  const promptStale=new Map(); // task id -> what changed in the project folder since its prompt was drafted
   const fstat=new Map(); // path -> what /api/stat said about it on this computer
 
   const filesOf=x=>Array.isArray(x?.files)?x.files.filter(f=>f&&f.path):[];
@@ -331,7 +332,11 @@
   });
 
   // ---- task details dialog ----
-  function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); }
+  function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); checkPrompt(id); }
+  function checkPrompt(id){
+    if(!itemOf(id)?.prompt) return;
+    db.call('POST','/api/prompt-check',{id}).then(r=>{ promptStale.set(id,r); if(dlgId===id) renderTaskDlg(); }).catch(()=>{});
+  }
   function refreshTaskDlg(){ if($('task-dlg').open) renderTaskDlg(); }
   function renderTaskDlg(){
     const d=$('task-dlg'), it=itemOf(dlgId);
@@ -370,12 +375,13 @@
 
   // A prompt for Claude Code, drafted from the task and its project; editable, kept on the task.
   function promptSection(it, p){
-    const busy=promptBusy===it.id, folder=p?.folder;
-    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?'<button type="button" class="mini" data-pdraft title="Write a new draft. Replaces the text below.">Redraft</button>':''}</div>`;
-    if(busy) return `<section class="td-prompt">${head}<p class="empty">Drafting from the task, its notes and files, and the project…</p></section>`;
-    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, and the project's goal and folder. You can edit it before copying.</p>
+    const busy=promptBusy===it.id, folder=p?.folder, st=promptStale.get(it.id);
+    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?`<div class="meta"><button type="button" class="mini${st?.stale?' primary':''}" data-pdraft title="Revise it for what's in the project folder now, keeping your edits">Update</button><button type="button" class="linkish" data-pdraft data-fresh="1" title="Write a new prompt from scratch">Start over</button></div>`:''}</div>`;
+    if(busy) return `<section class="td-prompt">${head}<p class="empty">${promptMode==='update'?'Reading the project folder and updating the prompt…':'Reading the project folder and drafting…'}</p></section>`;
+    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, the project's goal, and what's already in the project folder's scripts and notebooks. You can edit it before copying.</p>
       <div><button type="button" class="mini primary" data-pdraft ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}>Draft prompt</button></div></section>`;
     return `<section class="td-prompt">${head}
+      ${st?.stale?`<p class="hint pp-stale">The project folder has changed since this was written: ${esc(st.changed.join(', '))}${st.more?` and ${st.more} more`:''}. Update to bring the prompt up to date.</p>`:''}
       <textarea id="td-prompt" rows="12" aria-label="Prompt for Claude">${esc(it.prompt)}</textarea>
       <div class="compose-row"><button type="button" class="btn" data-pcopy>Copy</button>${folder?`<button type="button" class="mini" data-peditor="${esc(folder)}" title="Open ${esc(folder)}">${ICON.folder}Open ${esc(baseName(folder))} in ${esc(editorShort())}</button>`:''}</div></section>`;
   }
@@ -402,10 +408,12 @@
   dlg.addEventListener('click', async e=>{
     if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
     if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
-    if(e.target.closest('[data-pdraft]')){
-      const id=dlgId; await saveDlgText(); promptBusy=id; renderTaskDlg();
-      try{ await db.call('POST','/api/prompt',{id}); await db.refreshAll(); }
-      catch(err){ toast('Could not draft the prompt: '+err.message, true); }
+    const pd=e.target.closest('[data-pdraft]');
+    if(pd){
+      const id=dlgId, fresh=!!pd.dataset.fresh; await saveDlgText();
+      promptMode=itemOf(id)?.prompt&&!fresh?'update':'draft'; promptBusy=id; renderTaskDlg();
+      try{ await db.call('POST','/api/prompt',{id, fresh}); await db.refreshAll(); promptStale.delete(id); }
+      catch(err){ toast('Could not write the prompt: '+err.message, true); }
       promptBusy=null; renderTaskDlg(); return;
     }
     if(e.target.closest('[data-pcopy]')){

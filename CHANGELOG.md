@@ -21,8 +21,11 @@ Releases are tagged `vX.Y.Z` on `main`.
 - **Project work folders.** New projects get `~/Documents/Projects/Repos/<name>` with a standard
   research layout, set up as a git repo with a first commit. `desk new`.
 - **Prompts for Claude.** Draft, edit and copy a Claude Code prompt from any task; open the project
-  folder in VS Code. `desk prompt`.
-- The app no longer says DeepSeek: it's Work Desk, using whichever AI you connect.
+  folder in VS Code. `desk prompt`. Prompts read what's already in the project folder (`scripts/`,
+  `notebooks/`, commits, uncommitted changes); the task says when the folder has moved on, and
+  **Update** revises the prompt for that progress while keeping your edits.
+- The app no longer says DeepSeek: it's Work Desk, using whichever AI you connect. **AI keys** is at
+  the top of the page, with separate boxes for the chat model and Jev.
 
 ## 0.2.0
 

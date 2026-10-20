@@ -117,6 +117,7 @@ const LAYOUT: &[(&str, &str)] = &[
     ("data/", "Raw inputs. Not committed; list where each file came from in data/README.md."),
     ("src/", "Reusable code."),
     ("scripts/", "One-off analyses that use `src/`."),
+    ("notebooks/", "Exploratory notebooks (Jupyter, Pluto, R Markdown)."),
     ("output/", "Generated results. Not committed: anything here can be made again from the code."),
     ("display_items/", "Figures and tables for papers and talks."),
     ("drafts/", "Manuscripts, IND sections and reports."),
@@ -150,7 +151,7 @@ fn scaffold(dir: &Path, name: &str, doc: &Map<String, Value>, id: &str) -> Resul
     }
     claude.push_str(
         "- Raw data lives in `data/` and is not committed. Never change it in place; write results to `output/`.\n\
-         - Reusable code goes in `src/`; scripts in `scripts/` call it.\n\
+         - Reusable code goes in `src/`; scripts in `scripts/` and notebooks in `notebooks/` call it.\n\
          - Figures and tables for papers and talks go in `display_items/`; drafts in `drafts/`.\n",
     );
 
@@ -166,7 +167,7 @@ fn scaffold(dir: &Path, name: &str, doc: &Map<String, Value>, id: &str) -> Resul
     for (path, text) in files {
         std::fs::write(dir.join(path), text)?;
     }
-    for folder in ["src", "scripts", "output", "display_items", "drafts", "notes"] {
+    for folder in ["src", "scripts", "notebooks", "output", "display_items", "drafts", "notes"] {
         std::fs::write(dir.join(folder).join(".gitkeep"), "")?;
     }
     Ok(git_init(dir, name))
@@ -210,7 +211,7 @@ mod tests {
         let c = create(&store, &cfg, doc.clone(), true, &["t1".into()]).unwrap();
         assert_eq!(c.id, "charm-ind-2");
         let dir = d.join("Repos/charm-ind");
-        for f in ["README.md", "CLAUDE.md", ".gitignore", "data/README.md", "scripts/.gitkeep", "display_items/.gitkeep", "notes/.gitkeep"] {
+        for f in ["README.md", "CLAUDE.md", ".gitignore", "data/README.md", "scripts/.gitkeep", "notebooks/.gitkeep", "display_items/.gitkeep", "notes/.gitkeep"] {
             assert!(dir.join(f).exists(), "{f}");
         }
         assert!(std::fs::read_to_string(dir.join("README.md")).unwrap().contains("File the IND"));

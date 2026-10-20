@@ -396,11 +396,16 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-prompt .sec-h{font-size:1rem}
 .tdlg .td-prompt textarea{width:100%;min-height:220px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:.8rem;line-height:1.5;resize:vertical}
 .td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+.td-prompt .meta{display:flex;align-items:center;gap:10px}
+.pp-stale{margin:0;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:.85rem}
 .pf-check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted)}
 .pf-check code{font-family:var(--mono);font-size:.8rem}
-.ai-state{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
-.ai-state b{display:inline-block;min-width:92px}
-.ai-state .empty{display:inline;padding:0}
+.key-block{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
+.key-block .label{margin:0}
+.key-block .alert-detail{margin:0}
+.key-now{margin:0;font-size:.88rem}
+.setup>.alert-detail{margin:0}
+.keys-btn{white-space:nowrap}
 .hours-row{align-items:center;font-size:.88rem;color:var(--muted)}
 .hours-row input{flex:0 0 80px!important;font-family:inherit!important}
 .triage{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin-top:-4px}
@@ -446,6 +451,7 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     </div>
     <div class="top-right">
       <div class="stats" id="stats" aria-live="polite"></div>
+      <button class="mini keys-btn" type="button" data-ai-open title="API keys for the chat model and Jev">AI keys</button>
       <div class="toggle" role="group" aria-label="View">
         <button id="view-desk" aria-pressed="true">Desk</button>
         <button id="view-board" aria-pressed="false">Board</button>
@@ -459,13 +465,20 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     <div class="desk-main">
       <section class="panel setup" id="ai-setup" hidden aria-labelledby="k-h">
         <div class="panel-head"><h2 class="sec-h" id="k-h">AI keys</h2><button class="mini" id="ai-close" type="button" hidden>Done</button></div>
-        <p class="alert-detail" style="margin:0">Paste an API key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter to have notes filed for you and to get a daily brief. Work Desk works out which service a key is for. Add a TypeSafe key as well and Jev will check whether each note really fits a project. Keys stay on this computer.</p>
-        <ul class="ai-state" id="ai-state"></ul>
+        <div class="key-block">
+          <p class="label">Chat model</p>
+          <p class="alert-detail">Writes your tasks, the daily brief and prompts for Claude. Paste a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter; Work Desk works out which.</p>
+          <p class="key-now" id="chat-now"></p>
+          <form class="note-row key-form" data-kind="chat"><input type="password" id="ai-key" placeholder="Paste a chat model API key" autocomplete="off" aria-label="Chat model API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <div class="key-block">
+          <p class="label">Jev (TypeSafe)</p>
+          <p class="alert-detail">Optional. Makes the structured calls: which project a note belongs to, repeats, task sizes for the brief, and how far along work is. Get a key at console.typesafe.ai.</p>
+          <p class="key-now" id="jev-now"></p>
+          <form class="note-row key-form" data-kind="jev"><input type="password" id="jev-key" placeholder="Paste your TypeSafe key" autocomplete="off" aria-label="Jev (TypeSafe) API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <p class="alert-detail">Keys stay on this computer.</p>
         <form id="hours-form" class="note-row hours-row"><label for="hours-in">Hours of project work on a typical day</label><input type="number" id="hours-in" min="0.5" max="24" step="0.5"><button class="mini" type="submit">Save</button></form>
-        <form id="key-form" class="note-row">
-          <input type="password" id="ai-key" placeholder="Paste an API key" autocomplete="off" aria-label="API key">
-          <button class="btn" type="submit">Save key</button>
-        </form>
         <p class="status" id="key-status" role="status"></p>
       </section>
       <section class="panel" aria-labelledby="br-h">
@@ -596,7 +609,8 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   };
   const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
   let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
-  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null;
+  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null, promptMode='';
+  const promptStale=new Map(); // task id -> what changed in the project folder since its prompt was drafted
   const fstat=new Map(); // path -> what /api/stat said about it on this computer
 
   const filesOf=x=>Array.isArray(x?.files)?x.files.filter(f=>f&&f.path):[];
@@ -915,7 +929,11 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   });
 
   // ---- task details dialog ----
-  function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); }
+  function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); checkPrompt(id); }
+  function checkPrompt(id){
+    if(!itemOf(id)?.prompt) return;
+    db.call('POST','/api/prompt-check',{id}).then(r=>{ promptStale.set(id,r); if(dlgId===id) renderTaskDlg(); }).catch(()=>{});
+  }
   function refreshTaskDlg(){ if($('task-dlg').open) renderTaskDlg(); }
   function renderTaskDlg(){
     const d=$('task-dlg'), it=itemOf(dlgId);
@@ -954,12 +972,13 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 
   // A prompt for Claude Code, drafted from the task and its project; editable, kept on the task.
   function promptSection(it, p){
-    const busy=promptBusy===it.id, folder=p?.folder;
-    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?'<button type="button" class="mini" data-pdraft title="Write a new draft. Replaces the text below.">Redraft</button>':''}</div>`;
-    if(busy) return `<section class="td-prompt">${head}<p class="empty">Drafting from the task, its notes and files, and the project…</p></section>`;
-    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, and the project's goal and folder. You can edit it before copying.</p>
+    const busy=promptBusy===it.id, folder=p?.folder, st=promptStale.get(it.id);
+    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?`<div class="meta"><button type="button" class="mini${st?.stale?' primary':''}" data-pdraft title="Revise it for what's in the project folder now, keeping your edits">Update</button><button type="button" class="linkish" data-pdraft data-fresh="1" title="Write a new prompt from scratch">Start over</button></div>`:''}</div>`;
+    if(busy) return `<section class="td-prompt">${head}<p class="empty">${promptMode==='update'?'Reading the project folder and updating the prompt…':'Reading the project folder and drafting…'}</p></section>`;
+    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, the project's goal, and what's already in the project folder's scripts and notebooks. You can edit it before copying.</p>
       <div><button type="button" class="mini primary" data-pdraft ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}>Draft prompt</button></div></section>`;
     return `<section class="td-prompt">${head}
+      ${st?.stale?`<p class="hint pp-stale">The project folder has changed since this was written: ${esc(st.changed.join(', '))}${st.more?` and ${st.more} more`:''}. Update to bring the prompt up to date.</p>`:''}
       <textarea id="td-prompt" rows="12" aria-label="Prompt for Claude">${esc(it.prompt)}</textarea>
       <div class="compose-row"><button type="button" class="btn" data-pcopy>Copy</button>${folder?`<button type="button" class="mini" data-peditor="${esc(folder)}" title="Open ${esc(folder)}">${ICON.folder}Open ${esc(baseName(folder))} in ${esc(editorShort())}</button>`:''}</div></section>`;
   }
@@ -986,10 +1005,12 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
   dlg.addEventListener('click', async e=>{
     if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
     if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
-    if(e.target.closest('[data-pdraft]')){
-      const id=dlgId; await saveDlgText(); promptBusy=id; renderTaskDlg();
-      try{ await db.call('POST','/api/prompt',{id}); await db.refreshAll(); }
-      catch(err){ toast('Could not draft the prompt: '+err.message, true); }
+    const pd=e.target.closest('[data-pdraft]');
+    if(pd){
+      const id=dlgId, fresh=!!pd.dataset.fresh; await saveDlgText();
+      promptMode=itemOf(id)?.prompt&&!fresh?'update':'draft'; promptBusy=id; renderTaskDlg();
+      try{ await db.call('POST','/api/prompt',{id, fresh}); await db.refreshAll(); promptStale.delete(id); }
+      catch(err){ toast('Could not write the prompt: '+err.message, true); }
       promptBusy=null; renderTaskDlg(); return;
     }
     if(e.target.closest('[data-pcopy]')){
@@ -1536,21 +1557,25 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     try{
       const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName;
       $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
-      $('ai-state').innerHTML=`<li><b>Chat model</b> ${s.chat?`${esc(s.chat)} <button class="linkish" type="button" data-forget="chat">Remove</button>`:'<span class="empty">none yet</span>'}</li>`
-        +`<li><b>Jev</b> ${s.jev?'on: decides projects, spots repeats, sizes tasks for the brief, and reads tasks before prompts <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
+      $('chat-now').innerHTML=s.chat?`Using ${esc(s.chat)}. <button class="linkish" type="button" data-forget="chat">Remove</button>`:'No key yet.';
+      $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
       if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
       $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
-        +` · <button class="linkish" type="button" id="ai-open">AI keys</button>`;
+        +` · <button class="linkish" type="button" data-ai-open>AI keys</button>`;
       if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
-  $('key-form').addEventListener('submit', async e=>{
+  // Chat keys are matched to their service; the Jev box saves the key as Jev's (after TypeSafe accepts it).
+  $('ai-setup').addEventListener('submit', async e=>{
+    const f=e.target.closest('.key-form'); if(!f) return;
     e.preventDefault();
-    const key=$('ai-key').value.trim(); if(!key) return;
+    const input=f.querySelector('input'), key=input.value.trim(); if(!key) return;
     keysOpen=true; $('key-status').textContent='Checking the key…';
-    try{ const r=await db.call('POST','/api/settings',{key}); $('ai-key').value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
-      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>'; }
-    catch(err){ $('key-status').textContent=err.message; }
+    try{
+      const r=await db.call('POST','/api/settings', f.dataset.kind==='jev'?{key, provider:'jev'}:{key});
+      input.value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
+      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>';
+    }catch(err){ $('key-status').textContent=err.message; }
   });
   $('hours-form').addEventListener('submit', async e=>{
     e.preventDefault();
@@ -1558,7 +1583,11 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
     catch(err){ $('key-status').textContent=err.message; }
   });
   document.addEventListener('click', async e=>{
-    if(e.target.closest('#ai-open')){ keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'nearest'}); $('ai-key').focus(); return; }
+    if(e.target.closest('[data-ai-open]')){
+      if(view!=='desk') setView('desk');
+      keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'start', behavior:'smooth'});
+      setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
+    }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
     const fg=e.target.closest('[data-forget]');
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }

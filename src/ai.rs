@@ -9,6 +9,7 @@
 use crate::config::Config;
 use crate::jev::{self, Jev, NoteReading};
 use crate::logic;
+use crate::progress::{self, Progress};
 use crate::provider::{self, Identified, Provider};
 use crate::store::{Doc, Store};
 use crate::util::*;
@@ -163,9 +164,17 @@ Use only the facts given. When something important is unknown, put a short place
 for the researcher to fill in instead of guessing. If the task is mainly writing prose (a paper section, IND \
 narrative, grant or reviewer response), ask Claude to start by working out an outline with the researcher, \
 not to draft the whole document. Keep the prompt as short as the task allows.\n\
+When the message includes progress in the project folder (scripts, notebooks, commits, uncommitted changes), \
+use it to see what has already been done: point Claude at the existing scripts and notebooks to build on rather \
+than starting over, say what's left, and have Claude begin by checking the current state of those files and any \
+uncommitted changes before changing anything. Don't call something done unless the progress shows it.\n\
+When the message includes the current prompt, revise that prompt for the progress shown instead of writing a new \
+one: keep the researcher's wording and edits unless the progress makes them out of date, mark finished steps as \
+done or drop them, and update what comes next.\n\
 When the message includes Jev's judgments about the task, use them: shape the prompt for the kind of work Jev \
 names; if Jev puts the task at 50% or more too vague, have Claude first agree with the researcher on what done \
-looks like before changing anything; name only the linked files Jev says are likely needed.\n\
+looks like before changing anything; name only the linked files Jev says are likely needed, and focus on the \
+scripts and notebooks Jev says are part of this task.\n\
 Respond with a JSON object only: {\"prompt\": string}.";
 
 pub fn http_client() -> reqwest::Client {
@@ -435,12 +444,35 @@ impl Ai {
     }
 }
 
-/// Draft a prompt for Claude Code from a task and its project, and keep it on the task.
-pub async fn draft_prompt(store: &Store, ai: &Ai, id: &str) -> Result<String> {
+/// What's been done so far in a task's project folder (`dirs`, e.g. scripts/ and notebooks/).
+pub fn task_progress(projects: &[Doc], item: &Map<String, Value>, dirs: &[String]) -> Option<Progress> {
+    let pid = logic::s(item, "project")?;
+    let folder = projects.iter().find(|(p, _)| p == pid).and_then(|(_, p)| logic::s(p, "folder"))?;
+    progress::scan(&crate::config::expand_home(folder), dirs)
+}
+
+/// Whether the project folder has moved on since a task's prompt was drafted: what changed.
+pub fn prompt_outdated(store: &Store, id: &str, dirs: &[String]) -> Result<Vec<String>> {
+    let item = store.get("items", id)?.ok_or_else(|| anyhow!("There's no task with id {id}."))?;
+    if logic::s(&item, "prompt").is_none() {
+        return Ok(Vec::new());
+    }
+    let stamp = item.get("prompt_stamp").and_then(Value::as_i64).unwrap_or(0);
+    Ok(task_progress(&store.list("projects")?, &item, dirs).map(|p| p.changed_since(stamp)).unwrap_or_default())
+}
+
+/// Draft a prompt for Claude Code from a task, its project, and what's already been done in the
+/// project folder, and keep it on the task. Unless `fresh`, an existing prompt is revised for the
+/// progress since, keeping the researcher's edits.
+pub async fn draft_prompt(store: &Store, ai: &Ai, id: &str, dirs: &[String], fresh: bool) -> Result<String> {
     let chat = ai.writer("Drafting a prompt")?;
     let item = store.get("items", id)?.ok_or_else(|| anyhow!("There's no task with id {id}."))?;
     let projects = store.list("projects")?;
     let mut context = logic::prompt_context(id, &item, &projects, &store.list("items")?);
+    let progress = task_progress(&projects, &item, dirs);
+    if let Some(p) = &progress {
+        context.push_str(&p.text());
+    }
     if let Some(j) = &ai.jev {
         let project = logic::s(&item, "project").and_then(|pid| projects.iter().find(|(p, _)| p == pid)).map(|(_, p)| p);
         let folder = project.and_then(|p| logic::s(p, "folder"));
@@ -450,14 +482,18 @@ pub async fn draft_prompt(store: &Store, ai: &Ai, id: &str) -> Result<String> {
             .flat_map(logic::file_paths)
             .map(|f| logic::from_folder(f, folder))
             .collect();
-        if let Ok(r) = j.read_for_prompt(&item, project, &files).await {
+        if let Ok(r) = j.read_for_prompt(&item, project, &files, progress.as_ref()).await {
             context.push_str(&r.facts());
         }
     }
-    let v = chat.chat_json(PROMPT_SYSTEM, &context, 1500).await?;
+    if let (false, Some(current)) = (fresh, logic::s(&item, "prompt")) {
+        context.push_str(&format!("\nThe current prompt, to revise (the researcher may have edited it):\n<<<\n{current}\n>>>\n"));
+    }
+    let v = chat.chat_json(PROMPT_SYSTEM, &context, 1800).await?;
     let prompt = text_field(&v, "prompt").ok_or_else(|| anyhow!("The draft came back empty. Try again."))?;
     let mut patch = Map::new();
     patch.insert("prompt".into(), json!(prompt));
+    patch.insert("prompt_stamp".into(), json!(progress.as_ref().map_or(0, Progress::latest)));
     patch.insert("updated".into(), json!(now_iso()));
     store.merge("items", id, &patch)?;
     Ok(prompt)

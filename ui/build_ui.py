@@ -77,17 +77,26 @@ rep("try{ draft=''; await addItem(text, project, stage); renderBoard(); }",
     "try{ draft=''; const r=await addItem(text, project, stage); if(!r) draft=text; renderBoard(); if(r) flash('bcap-status', filedMsg(r)); }")
 
 # ---- Desk: setup box, brief, sort inbox, project editing ----
+rep('<div class="toggle" role="group" aria-label="View">',
+    '<button class="mini keys-btn" type="button" data-ai-open title="API keys for the chat model and Jev">AI keys</button>\n      <div class="toggle" role="group" aria-label="View">')
 rep('    <div class="desk-main">\n',
     '''    <div class="desk-main">
       <section class="panel setup" id="ai-setup" hidden aria-labelledby="k-h">
         <div class="panel-head"><h2 class="sec-h" id="k-h">AI keys</h2><button class="mini" id="ai-close" type="button" hidden>Done</button></div>
-        <p class="alert-detail" style="margin:0">Paste an API key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter to have notes filed for you and to get a daily brief. Work Desk works out which service a key is for. Add a TypeSafe key as well and Jev will check whether each note really fits a project. Keys stay on this computer.</p>
-        <ul class="ai-state" id="ai-state"></ul>
+        <div class="key-block">
+          <p class="label">Chat model</p>
+          <p class="alert-detail">Writes your tasks, the daily brief and prompts for Claude. Paste a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter; Work Desk works out which.</p>
+          <p class="key-now" id="chat-now"></p>
+          <form class="note-row key-form" data-kind="chat"><input type="password" id="ai-key" placeholder="Paste a chat model API key" autocomplete="off" aria-label="Chat model API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <div class="key-block">
+          <p class="label">Jev (TypeSafe)</p>
+          <p class="alert-detail">Optional. Makes the structured calls: which project a note belongs to, repeats, task sizes for the brief, and how far along work is. Get a key at console.typesafe.ai.</p>
+          <p class="key-now" id="jev-now"></p>
+          <form class="note-row key-form" data-kind="jev"><input type="password" id="jev-key" placeholder="Paste your TypeSafe key" autocomplete="off" aria-label="Jev (TypeSafe) API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <p class="alert-detail">Keys stay on this computer.</p>
         <form id="hours-form" class="note-row hours-row"><label for="hours-in">Hours of project work on a typical day</label><input type="number" id="hours-in" min="0.5" max="24" step="0.5"><button class="mini" type="submit">Save</button></form>
-        <form id="key-form" class="note-row">
-          <input type="password" id="ai-key" placeholder="Paste an API key" autocomplete="off" aria-label="API key">
-          <button class="btn" type="submit">Save key</button>
-        </form>
         <p class="status" id="key-status" role="status"></p>
       </section>
       <section class="panel" aria-labelledby="br-h">
@@ -135,9 +144,12 @@ rep("@media (max-width:620px){.tl{--lw:150px}}", """@media (max-width:620px){.tl
 .proj-form .field input:not([type=date]){width:100%}
 .pf-check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted)}
 .pf-check code{font-family:var(--mono);font-size:.8rem}
-.ai-state{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
-.ai-state b{display:inline-block;min-width:92px}
-.ai-state .empty{display:inline;padding:0}
+.key-block{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
+.key-block .label{margin:0}
+.key-block .alert-detail{margin:0}
+.key-now{margin:0;font-size:.88rem}
+.setup>.alert-detail{margin:0}
+.keys-btn{white-space:nowrap}
 .hours-row{align-items:center;font-size:.88rem;color:var(--muted)}
 .hours-row input{flex:0 0 80px!important;font-family:inherit!important}
 .triage{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin-top:-4px}
@@ -203,21 +215,25 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     try{
       const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName;
       $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
-      $('ai-state').innerHTML=`<li><b>Chat model</b> ${s.chat?`${esc(s.chat)} <button class="linkish" type="button" data-forget="chat">Remove</button>`:'<span class="empty">none yet</span>'}</li>`
-        +`<li><b>Jev</b> ${s.jev?'on: decides projects, spots repeats, sizes tasks for the brief, and reads tasks before prompts <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
+      $('chat-now').innerHTML=s.chat?`Using ${esc(s.chat)}. <button class="linkish" type="button" data-forget="chat">Remove</button>`:'No key yet.';
+      $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
       if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
       $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
-        +` · <button class="linkish" type="button" id="ai-open">AI keys</button>`;
+        +` · <button class="linkish" type="button" data-ai-open>AI keys</button>`;
       if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
-  $('key-form').addEventListener('submit', async e=>{
+  // Chat keys are matched to their service; the Jev box saves the key as Jev's (after TypeSafe accepts it).
+  $('ai-setup').addEventListener('submit', async e=>{
+    const f=e.target.closest('.key-form'); if(!f) return;
     e.preventDefault();
-    const key=$('ai-key').value.trim(); if(!key) return;
+    const input=f.querySelector('input'), key=input.value.trim(); if(!key) return;
     keysOpen=true; $('key-status').textContent='Checking the key…';
-    try{ const r=await db.call('POST','/api/settings',{key}); $('ai-key').value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
-      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>'; }
-    catch(err){ $('key-status').textContent=err.message; }
+    try{
+      const r=await db.call('POST','/api/settings', f.dataset.kind==='jev'?{key, provider:'jev'}:{key});
+      input.value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
+      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>';
+    }catch(err){ $('key-status').textContent=err.message; }
   });
   $('hours-form').addEventListener('submit', async e=>{
     e.preventDefault();
@@ -225,7 +241,11 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     catch(err){ $('key-status').textContent=err.message; }
   });
   document.addEventListener('click', async e=>{
-    if(e.target.closest('#ai-open')){ keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'nearest'}); $('ai-key').focus(); return; }
+    if(e.target.closest('[data-ai-open]')){
+      if(view!=='desk') setView('desk');
+      keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'start', behavior:'smooth'});
+      setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
+    }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
     const fg=e.target.closest('[data-forget]');
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }

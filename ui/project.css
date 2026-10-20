@@ -114,3 +114,5 @@ a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
 .td-prompt .sec-h{font-size:1rem}
 .tdlg .td-prompt textarea{width:100%;min-height:220px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:.8rem;line-height:1.5;resize:vertical}
 .td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+.td-prompt .meta{display:flex;align-items:center;gap:10px}
+.pp-stale{margin:0;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:.85rem}

@@ -16,6 +16,7 @@ mod config;
 mod desktop;
 mod jev;
 mod logic;
+mod progress;
 mod project;
 mod provider;
 mod server;
@@ -66,11 +67,15 @@ enum Cmd {
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
     },
-    /// Draft a prompt for Claude Code about a task, print it and copy it
+    /// Draft a prompt for Claude Code about a task from what's in the project folder, print it and
+    /// copy it. If the task already has one, it's brought up to date with the folder.
     Prompt {
         /// The task's id, or words from it
         #[arg(required = true, num_args = 1..)]
         task: Vec<String>,
+        /// Write a new prompt instead of updating the one already on the task
+        #[arg(long)]
+        fresh: bool,
     },
     /// Show what needs doing today
     Today,
@@ -284,7 +289,7 @@ async fn run(cmd: Cmd) -> Result<()> {
                 println!("{}", paint.dim(&n));
             }
         }
-        Cmd::Prompt { task } => {
+        Cmd::Prompt { task, fresh } => {
             let store = open_store(&cfg)?;
             let ai = need_ai(&cfg, &http)?;
             let q = task.join(" ");
@@ -306,8 +311,8 @@ async fn run(cmd: Cmd) -> Result<()> {
                     bail!("{} tasks match. Use more words, or one of the ids above.", many.len());
                 }
             };
-            eprintln!("{}", paint.dim("Drafting…"));
-            let prompt = ai::draft_prompt(&store, &ai, id).await?;
+            eprintln!("{}", paint.dim("Reading the project folder and drafting…"));
+            let prompt = ai::draft_prompt(&store, &ai, id, &cfg.progress_dirs(), fresh).await?;
             println!("{prompt}");
             let copied = std::process::Command::new("pbcopy")
                 .stdin(std::process::Stdio::piped())

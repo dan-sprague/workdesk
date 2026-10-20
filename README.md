@@ -168,7 +168,7 @@ them, and the chat model writes with Jev's answers in front of it.
 | Filing a note | Is it about one of your projects? Which one? Does it hold several to-dos? | Below 50% on either project question, it's suggested for the Inbox. Several to-dos: the chat model splits it into tasks. |
 | Filing a note | Does it repeat an open task in that project? | The confirm window warns you. |
 | The brief | For each open task: how big is it, is it waiting on someone, how much does it matter to the goal, is it too vague to start? | Work Desk adds up the work due by each deadline against your hours, picks today's tasks (least room to spare first), quick wins, and what's stuck; the chat model writes the brief from that plan. |
-| Drafting a prompt | What kind of work is it? Is it too vague? Which linked files does it need? | The prompt is shaped for that kind of work, starts by agreeing what done looks like if it's vague, and names only the files that matter. |
+| Drafting a prompt | What kind of work is it? Is it too vague? Which linked files does it need? How far along is it, judging from the project folder? Which scripts and notebooks there are part of it? | The prompt is shaped for that kind of work, starts by agreeing what done looks like if it's vague, names only the files that matter, and focuses on the scripts that belong to the task. |
 
 Task judgments are kept on each task (`jev` in the data file) and only redone when the task's wording,
 notes or project change, so the first brief takes a few seconds longer and later ones don't. Task details
@@ -182,13 +182,20 @@ weekday unless you change it.
 ## Prompts for Claude
 
 Open any task and click **Draft prompt** under **Prompt for Claude**. Work Desk writes a prompt for Claude
-Code from the task, its notes and linked files, and the project's goal, overview, folder and other open
-tasks. It covers the goal, the context Claude needs, what to do, how to check the work, and what to report
-back. Anything it doesn't know is left as a `[placeholder]` for you to fill in.
+Code from the task, its notes and linked files, the project's goal, overview and other open tasks, and
+**what's already in the project folder**: the scripts in `scripts/` and `notebooks/` (newest first, with the
+top of each file, and whether a notebook has been run), recent commits, and uncommitted changes. So the
+prompt points Claude at the work to build on and says what's left, instead of starting over. It covers the
+goal, the context Claude needs, what to do, how to check the work, and what to report back. Anything it
+doesn't know is left as a `[placeholder]` for you to fill in.
 
 - Edit it in the box; your edits are saved on the task.
 - **Copy**, then **Open <folder> in VS Code** and paste it into Claude Code there.
-- **Redraft** writes a fresh one (replacing your edits), e.g. after you've added notes.
+- When the folder changes after the prompt was written (a script saved, a new commit), the task says
+  what changed. **Update** revises the prompt for the progress, keeping your edits; **Start over** writes
+  a new one. `desk prompt` updates too (`--fresh` to start over).
+- To read other folders as well (say `analysis/` or `code/`), set `progress_dirs` in config.json, e.g.
+  `"progress_dirs": ["scripts", "notebooks", "analysis"]`.
 - For writing tasks (paper sections, IND narrative), the prompt asks Claude to start on an outline with
   you rather than draft the whole document.
 - To open folders in another editor, set `editor` in config.json to its app name (e.g. `"Cursor"`).
@@ -207,6 +214,7 @@ charm-ind/
 ├── data/            raw inputs (not committed)
 ├── src/             reusable code
 ├── scripts/         one-off analyses
+├── notebooks/       exploratory notebooks
 ├── output/          generated results (not committed)
 ├── display_items/   figures and tables
 ├── drafts/          manuscripts, IND sections, reports
@@ -218,10 +226,11 @@ If a folder with that name already exists, Work Desk links it and leaves its con
 
 ## Settings
 
-- **API key**: paste one under **AI keys** (the link at the bottom of the page) or run `desk key <key>`.
-  Work Desk works out which service it's for (DeepSeek, OpenAI, Anthropic, Google Gemini, OpenRouter,
-  or TypeSafe for Jev), checks it works, and picks a sensible model. You can have one chat key and one Jev
-  key. `desk key --forget chat` or `--forget jev` removes one.
+- **API keys**: click **AI keys** at the top of the page. Paste a chat model key in the first box; Work
+  Desk works out which service it's for (DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter), checks
+  it works, and picks a sensible model. Paste a TypeSafe key in the **Jev** box. From the terminal:
+  `desk key <key>` (or `desk key --provider jev <key>`); `desk key --forget chat` or `--forget jev`
+  removes one.
 - **Model**: `desk model <name>` uses a different model from the same service.
 - **Another OpenAI-compatible service**: set `base_url` and `model` in
   `~/Library/Application Support/WorkDesk/config.json`, then `desk key --provider custom <key>`.

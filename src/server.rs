@@ -207,9 +207,22 @@ async fn brief(State(app): State<App>) -> ApiResult {
 /// Also `{"forget": "jev"}` or `{"forget": "chat"}`, `{"model": "..."}` and `{"hours_per_day": 4}`.
 async fn draft_prompt(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
     let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which task?"))?;
+    let fresh = body.get("fresh").and_then(Value::as_bool).unwrap_or(false);
     let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
-    let prompt = ai::draft_prompt(&app.store, &ai, id).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let dirs = app.cfg.read().unwrap().progress_dirs();
+    let prompt = ai::draft_prompt(&app.store, &ai, id, &dirs, fresh).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(json!({ "prompt": prompt })))
+}
+
+/// Has the project folder changed since this task's prompt was drafted?
+async fn prompt_check(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which task?"))?.to_string();
+    let dirs = app.cfg.read().unwrap().progress_dirs();
+    let store = app.store.clone();
+    let changed = tokio::task::spawn_blocking(move || ai::prompt_outdated(&store, &id, &dirs))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))??;
+    Ok(Json(json!({ "stale": !changed.is_empty(), "changed": changed.iter().take(5).collect::<Vec<_>>(), "more": changed.len().saturating_sub(5) })))
 }
 
 /// The desktop window can't always reach the clipboard itself.
@@ -449,6 +462,7 @@ pub fn router(app: App) -> Router {
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
         .route("/api/prompt", post(draft_prompt))
+        .route("/api/prompt-check", post(prompt_check))
         .route("/api/copy", post(copy))
         .route("/api/stat", post(stat))
         .route("/api/open", post(open_linked))

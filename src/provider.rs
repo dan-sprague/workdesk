@@ -107,7 +107,11 @@ pub async fn identify(http: &reqwest::Client, key: &str, forced: Option<&str>) -
         bail!("The key is empty.");
     }
     if forced == Some("jev") {
-        return Ok(Identified::Jev);
+        return match jev_accepts(http, key).await {
+            Ok(true) => Ok(Identified::Jev),
+            Ok(false) => bail!("TypeSafe didn't accept this key. Check that you copied all of it from console.typesafe.ai."),
+            Err(e) => bail!("Couldn't check the key with TypeSafe ({e}). Are you online?"),
+        };
     }
     if let Some(id) = forced {
         let Some(p) = by_id(id) else { bail!("Unknown service '{id}'. Use one of: deepseek, openai, anthropic, gemini, openrouter, custom, jev.") };

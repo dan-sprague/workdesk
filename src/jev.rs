@@ -10,6 +10,7 @@
 //! Request and answer shapes follow docs.typesafe.ai (api, primitives, state).
 
 use crate::logic::{self, s};
+use crate::progress::Progress;
 use crate::provider;
 use crate::store::{Doc, Store};
 use crate::util::{iso_from_days, now_iso, today_days};
@@ -187,8 +188,18 @@ const KINDS: [(&str, &str); 6] = [
     ("reading", "Reading or reviewing literature or someone else's work"),
     ("admin", "Coordinating, scheduling, ordering or other admin"),
 ];
-/// At most this many linked files get their own "is it needed?" question.
+/// At most this many linked files, and scripts in the folder, get their own question.
 const MAX_FILES: usize = 20;
+const MAX_SCRIPTS: usize = 30;
+const DONE: &str = "How far along is `task`, judging from `progress` in the project folder: its scripts and \
+notebooks, recent commits and uncommitted changes?";
+const DONE_LEVELS: [&str; 4] = [
+    "Nothing in `progress` shows work on the task yet",
+    "Work on the task has started: some of its scripts or notebooks exist",
+    "Most of the task looks done; what's left is finishing, checking or writing up",
+    "The task looks finished",
+];
+const DONE_NAMES: [&str; 4] = ["not started", "started", "mostly done", "finished"];
 
 /// Jev's reading of a task before a prompt is drafted for it.
 pub struct PromptReading {
@@ -196,6 +207,10 @@ pub struct PromptReading {
     pub vague: Option<f64>,
     /// Each linked file and the probability that the task needs it.
     pub files: Vec<(String, f64)>,
+    /// How far along the task looks from the folder: a probability per level of DONE_LEVELS.
+    pub done: Option<Vec<f64>>,
+    /// Each script or notebook in the folder and the probability that it's part of this task.
+    pub scripts: Vec<(String, f64)>,
 }
 
 impl PromptReading {
@@ -214,6 +229,22 @@ impl PromptReading {
         }
         if !skip.is_empty() {
             out.push_str(&format!("- Linked files likely not needed: {}\n", skip.iter().map(|(f, _)| f.as_str()).collect::<Vec<_>>().join(", ")));
+        }
+        if let Some(levels) = &self.done {
+            let mut ranked: Vec<(usize, f64)> = levels.iter().copied().enumerate().collect();
+            ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let top: Vec<String> = ranked.iter().take(2).filter_map(|(i, p)| Some(format!("{} {}", DONE_NAMES.get(*i)?, pct(*p)))).collect();
+            out.push_str(&format!("- How far along it looks from the project folder: {}\n", top.join(", ")));
+        }
+        let (part, other): (Vec<_>, Vec<_>) = self.scripts.iter().partition(|(_, p)| *p >= YES);
+        if !part.is_empty() {
+            out.push_str(&format!(
+                "- Scripts and notebooks that are part of this task: {}\n",
+                part.iter().map(|(f, p)| format!("{f} ({})", pct(*p))).collect::<Vec<_>>().join(", ")
+            ));
+        }
+        if !other.is_empty() {
+            out.push_str(&format!("- Probably unrelated to it: {}\n", other.iter().take(12).map(|(f, _)| f.as_str()).collect::<Vec<_>>().join(", ")));
         }
         out
     }
@@ -343,8 +374,15 @@ impl Jev {
         Ok((patches.len(), err))
     }
 
-    /// What kind of work a task is, whether it's vague, and which of `files` it needs.
-    pub async fn read_for_prompt(&self, m: &Map<String, Value>, project: Option<&Map<String, Value>>, files: &[String]) -> Result<PromptReading> {
+    /// What kind of work a task is, whether it's vague, which of `files` it needs, and, from
+    /// the project folder's `progress`, how far along it is and which scripts are part of it.
+    pub async fn read_for_prompt(
+        &self,
+        m: &Map<String, Value>,
+        project: Option<&Map<String, Value>>,
+        files: &[String],
+        progress: Option<&Progress>,
+    ) -> Result<PromptReading> {
         let files = &files[..files.len().min(MAX_FILES)];
         let mut state = task_state(m, project);
         state["files"] = json!(files);
@@ -354,9 +392,18 @@ impl Jev {
         for i in 0..files.len() {
             q.insert(format!("file_{i}"), noul(&format!("Will working on `task` need the file or folder `files[{i}]`?")));
         }
+        let scripts: Vec<String> = progress.map(|p| p.scripts.iter().take(MAX_SCRIPTS).map(|s| s.path.clone()).collect()).unwrap_or_default();
+        if let Some(p) = progress {
+            state["progress"] = p.state();
+            q.insert("done".into(), score(DONE, &DONE_LEVELS));
+            for i in 0..scripts.len() {
+                q.insert(format!("script_{i}"), noul(&format!("Is `progress.scripts[{i}]` part of the work on `task`?")));
+            }
+        }
         let a = self.ask(state, q).await?;
         let files = files.iter().enumerate().filter_map(|(i, f)| Some((f.clone(), a.noul(&format!("file_{i}"))?))).collect();
-        Ok(PromptReading { kind: a.choice("kind"), vague: a.noul("vague"), files })
+        let scripts = scripts.into_iter().enumerate().filter_map(|(i, f)| Some((f, a.noul(&format!("script_{i}"))?))).collect();
+        Ok(PromptReading { kind: a.choice("kind"), vague: a.noul("vague"), files, done: a.levels("done"), scripts })
     }
 }
 
