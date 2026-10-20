@@ -149,19 +149,21 @@ pub fn classify_context(projects: &[Doc], items: &[Doc]) -> String {
     out
 }
 
-/// One project in a sentence or two, for Jev's list of options.
-pub fn project_summary(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> String {
-    let mut out = s(p, "name").unwrap_or(pid).to_string();
-    for (k, label) in [("goal", "Goal"), ("context", "Context")] {
+/// One project as named facts, for Jev's `state`.
+pub fn project_facts(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> Value {
+    let mut out = Map::new();
+    out.insert("id".into(), Value::from(pid));
+    out.insert("name".into(), Value::from(s(p, "name").unwrap_or(pid)));
+    for k in ["goal", "context"] {
         if let Some(v) = s(p, k) {
-            out.push_str(&format!(". {label}: {v}"));
+            out.insert(k.into(), Value::from(v.chars().take(600).collect::<String>()));
         }
     }
     let tasks: Vec<&str> = items.iter().filter(|(_, m)| s(m, "project") == Some(pid)).filter_map(|(_, m)| s(m, "text")).take(6).collect();
     if !tasks.is_empty() {
-        out.push_str(&format!(". Tasks: {}", tasks.join("; ")));
+        out.insert("example_tasks".into(), Value::from(tasks));
     }
-    out.chars().take(900).collect()
+    Value::Object(out)
 }
 
 /// A linked path as Claude Code will see it from the project folder.

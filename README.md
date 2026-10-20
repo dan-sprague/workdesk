@@ -160,10 +160,10 @@ Notes waiting in the **Inbox** show the reason, and two buttons:
 ### Jev (optional)
 
 Add a [TypeSafe](https://typesafe.ai) key as well and Jev makes the project call. Jev doesn't write text;
-it picks from your projects plus “none of these” and says how sure it is. When it's less than 50% sure
-(`JEV_MIN_CONFIDENCE` in `src/ai.rs`) the note waits in the Inbox. The chat model still tidies the wording,
-finds the date and suggests the new project's name. A Jev key on its own files notes but can't write the
-brief.
+it answers two questions with probabilities: is this note about one of your projects at all, and which
+one. If either answer falls below its bar (`JEV_MIN_FIT` and `JEV_MIN_CONFIDENCE` in `src/ai.rs`, both
+0.5 to start with), the note is suggested for the Inbox. The chat model still tidies the wording, finds
+the date and suggests the new project's name. A Jev key on its own files notes but can't write the brief.
 
 ## Prompts for Claude
 

@@ -14,11 +14,12 @@ use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
 
-/// Below this Jev confidence a note waits in the Inbox instead of being filed.
-/// (Confidence is 0 when Jev's probability is spread evenly over the projects, 1 when it's all on one.)
+/// Jev answers two questions about each note, and both must clear these bars for it to be filed.
+/// They're starting points; check them against how your own notes get filed.
+/// Probability that the note is about one of the projects at all:
+pub const JEV_MIN_FIT: f64 = 0.5;
+/// Confidence in which project (0 when probability is spread evenly over them, 1 when it's all on one):
 pub const JEV_MIN_CONFIDENCE: f64 = 0.5;
-/// Jev's option for "none of these projects".
-const NO_PROJECT: &str = "no_project";
 
 #[derive(Clone)]
 pub struct Chat {
@@ -87,11 +88,13 @@ struct ChatFiling {
     due: Option<String>,
 }
 
-/// Jev's pick, with every option ranked by probability.
+/// Jev's reading of a note: which project, with every project ranked by probability,
+/// and the probability that the note belongs to any of them.
 struct JevPick {
     choice: String,
     confidence: f64,
     ranked: Vec<(String, f64)>,
+    fits: Option<f64>,
 }
 
 /// How a note becomes a task, shared by filing and by tidying a note whose project is already chosen.
@@ -130,9 +133,11 @@ sentence naming the words that decided it.\n",
 \"reason\": string, \"new_project\": string or null, \"task\": string, \"due\": string or null}."
 );
 
-const JEV_INSTRUCTIONS: &str = "Which of this researcher's projects is the note about? Choose a project only if \
-the note is about that project's own work (its study, paper, collaborators, data or deliverables), not merely \
-a shared topic or method. Choose no_project if the note is about work that isn't listed.";
+// TypeSafe's docs advise a separate yes/no question over a "none of the above" option.
+const JEV_FITS: &str = "Is `note` about the work of one of the researcher's `projects`: that project's own study, \
+paper, collaborators, data or deliverables? Sharing a topic or method with a project is not enough, and a \
+program, drug, study or filing named in the note that no project mentions points to work that isn't listed.";
+const JEV_WHICH: &str = "Which of the researcher's `projects` is `note` about? The options are the projects' ids.";
 
 const BRIEF_SYSTEM: &str = "You are a calm, practical executive assistant for a researcher who struggles \
 with executive function and with getting things fully finished. Using their task list, decide what \
@@ -292,26 +297,39 @@ fn read_filing(v: &Value, projects: &[Doc]) -> ChatFiling {
 
 impl Jev {
     async fn pick(&self, note: &str, projects: &[Doc], items: &[Doc]) -> Result<JevPick> {
-        let mut criteria = Map::new();
-        for (pid, p) in logic::ordered(projects) {
-            criteria.insert(pid.clone(), json!(logic::project_summary(&pid, &p, items)));
-        }
-        criteria.insert(NO_PROJECT.into(), json!("None of these projects: other work, such as a project that isn't listed."));
+        let ordered = logic::ordered(projects);
+        let criteria: Map<String, Value> = ordered.iter().map(|(pid, p)| (pid.clone(), json!(logic::s(p, "name").unwrap_or(pid)))).collect();
+        let facts: Vec<Value> = ordered.iter().map(|(pid, p)| logic::project_facts(pid, p, items)).collect();
         let body = json!({
             "model": provider::JEV_MODEL,
-            "state": note,
-            "questions": {"project": {"type": "choice", "instructions": JEV_INSTRUCTIONS, "criteria": criteria}}
+            "state": {"note": note, "projects": facts},
+            "questions": {
+                "fits": {"type": "noul", "instructions": JEV_FITS},
+                "project": {"type": "choice", "instructions": JEV_WHICH, "criteria": criteria}
+            }
         });
-        let resp = self.http.post(provider::JEV_URL).bearer_auth(&self.key).json(&body).send().await.map_err(|e| anyhow!("Couldn't reach Jev: {e}"))?;
-        let status = resp.status();
-        let v: Value = resp.json().await.unwrap_or(Value::Null);
-        match status.as_u16() {
+        // Busy or rate-limited: TypeSafe asks for a short wait before retrying.
+        let mut tries = 0;
+        let (status, v) = loop {
+            let resp = self.http.post(provider::JEV_URL).bearer_auth(&self.key).json(&body).send().await.map_err(|e| anyhow!("Couldn't reach Jev: {e}"))?;
+            let status = resp.status().as_u16();
+            if matches!(status, 429 | 529) && tries < 1 {
+                tries += 1;
+                tokio::time::sleep(Duration::from_millis(1500)).await;
+                continue;
+            }
+            break (status, resp.json::<Value>().await.unwrap_or(Value::Null));
+        };
+        match status {
             200..=299 => {}
             401 | 403 => bail!("TypeSafe turned down the Jev key."),
             429 => bail!("Jev is limiting requests."),
-            s => bail!("Jev returned {s}: {}", v["detail"].to_string().chars().take(200).collect::<String>()),
+            529 => bail!("Jev is overloaded right now."),
+            s => bail!("Jev returned {s}: {}", v.to_string().chars().take(200).collect::<String>()),
         }
-        read_pick(&v["answers"]["project"]).ok_or_else(|| anyhow!("Jev's answer was missing the project choice"))
+        let mut pick = read_pick(&v["answers"]["project"]).ok_or_else(|| anyhow!("Jev's answer was missing the project choice"))?;
+        pick.fits = v["answers"]["fits"]["noul"].as_f64();
+        Ok(pick)
     }
 }
 
@@ -322,7 +340,7 @@ fn read_pick(a: &Value) -> Option<JevPick> {
         .map(|m| m.iter().filter_map(|(k, p)| Some((k.clone(), p.as_f64()?))).collect())
         .unwrap_or_default();
     ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
-    Some(JevPick { choice, confidence: a["confidence"].as_f64().unwrap_or(0.0), ranked })
+    Some(JevPick { choice, confidence: a["confidence"].as_f64().unwrap_or(0.0), ranked, fits: None })
 }
 
 /// Combine the two readings of a note. Jev's calibrated pick decides the project when there is
@@ -343,12 +361,13 @@ fn decide(note: &str, projects: &[Doc], chat: Option<ChatFiling>, jev: Option<Je
         warning: None,
     };
     if let Some(j) = jev {
-        let known = |id: &str| id != NO_PROJECT && projects.iter().any(|(pid, _)| pid == id);
+        let known = |id: &str| projects.iter().any(|(pid, _)| pid == id);
         let close: Vec<&String> = j.ranked.iter().map(|(id, _)| id).filter(|id| known(id)).take(2).collect();
-        if known(&j.choice) && j.confidence >= JEV_MIN_CONFIDENCE {
+        let fits = j.fits.map_or(true, |p| p >= JEV_MIN_FIT);
+        if fits && known(&j.choice) && j.confidence >= JEV_MIN_CONFIDENCE {
             return Filed { project: j.choice, text, due, triage: None, warning: None };
         }
-        let reason = if j.choice == NO_PROJECT {
+        let reason = if !fits {
             chat_reason.unwrap_or_else(|| "None of your projects clearly covers this.".into())
         } else if close.len() == 2 {
             format!("It could be {} or {}.", name(close[0]), name(close[1]))
@@ -590,8 +609,10 @@ mod tests {
         Some(read_filing(&v, &projects()))
     }
 
-    fn jev(choice: &str, conf: f64, probs: Value) -> Option<JevPick> {
-        read_pick(&json!({ "type": "choice", "choice": choice, "confidence": conf, "probabilities": probs }))
+    fn jev(fits: f64, choice: &str, conf: f64, probs: Value) -> Option<JevPick> {
+        let mut p = read_pick(&json!({ "type": "choice", "choice": choice, "confidence": conf, "probabilities": probs }))?;
+        p.fits = Some(fits);
+        Some(p)
     }
 
     const NOTE: &str = "CHARM off-target notes for the IND";
@@ -624,17 +645,17 @@ mod tests {
     fn jev_decides_the_project() {
         let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "task": "Tidy"}));
         // confident: filed, with the chat model's wording
-        let f = decide(NOTE, &projects(), clear, jev("tox", 0.8, json!({"tox": 0.85, "rnaseq": 0.1, "no_project": 0.05})));
+        let f = decide(NOTE, &projects(), clear, jev(0.9, "tox", 0.8, json!({"tox": 0.9, "rnaseq": 0.1})));
         assert_eq!((f.project.as_str(), f.text.as_str()), ("tox", "Tidy"));
 
-        // none of these: Inbox, and the chat model's confident reason isn't shown as the reason
+        // doesn't fit any project: Inbox, and the chat model's confident reason isn't shown as the reason
         let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "new_project": null, "task": "Tidy"}));
-        let f = decide(NOTE, &projects(), clear, jev("no_project", 0.7, json!({"no_project": 0.8, "rnaseq": 0.15, "tox": 0.05})));
+        let f = decide(NOTE, &projects(), clear, jev(0.2, "rnaseq", 0.9, json!({"rnaseq": 0.95, "tox": 0.05})));
         let t = f.triage.unwrap();
         assert_eq!((t.reason.as_str(), t.closest.as_deref(), t.by), ("None of your projects clearly covers this.", Some("rnaseq"), "jev"));
 
         // torn between two
-        let f = decide(NOTE, &projects(), None, jev("rnaseq", 0.2, json!({"rnaseq": 0.47, "tox": 0.43, "no_project": 0.1})));
+        let f = decide(NOTE, &projects(), None, jev(0.9, "rnaseq", 0.06, json!({"rnaseq": 0.53, "tox": 0.47})));
         assert_eq!(f.text, NOTE);
         assert_eq!(f.triage.unwrap().reason, "It could be RNAseq or Tox.");
     }

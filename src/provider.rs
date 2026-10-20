@@ -4,7 +4,7 @@
 //! with `sk-`, and TypeSafe doesn't document a prefix for Jev keys).
 
 use anyhow::{bail, Result};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 pub struct Provider {
     pub id: &'static str,
@@ -34,6 +34,7 @@ pub const PROVIDERS: &[Provider] = &[
 ];
 
 pub const JEV_URL: &str = "https://api.typesafe.ai/v1/systemone";
+const JEV_MODELS_URL: &str = "https://api.typesafe.ai/v1/models";
 pub const JEV_MODEL: &str = "jev-latest";
 
 /// Services a pasted key is matched against, for messages.
@@ -88,14 +89,9 @@ async fn list_models(http: &reqwest::Client, provider: &Provider, key: &str) -> 
     }
 }
 
-/// Whether TypeSafe accepts the key, by asking Jev one tiny question.
+/// Whether TypeSafe accepts the key. Listing models needs the key and costs nothing.
 async fn jev_accepts(http: &reqwest::Client, key: &str) -> Result<bool> {
-    let body = json!({
-        "model": JEV_MODEL,
-        "state": "Work Desk is checking this API key.",
-        "questions": {"check": {"type": "noul", "instructions": "Is this message about an API key?"}}
-    });
-    let resp = http.post(JEV_URL).bearer_auth(key).json(&body).send().await?;
+    let resp = http.get(JEV_MODELS_URL).bearer_auth(key).send().await?;
     match resp.status().as_u16() {
         200..=299 => Ok(true),
         401 | 403 => Ok(false),
