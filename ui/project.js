@@ -338,7 +338,7 @@
     if(!it){ if(d.open) d.close(); return; }
     const fs=filesOf(it), target='items:'+it.id, p=projOf(it.project);
     keepFocus(d, ()=>{ d.innerHTML=`<div class="td-body">
-      <div class="td-head"><div class="meta">${tag(it.project)}${dueChip(it.due)}${staleInfo(it)!==null?`<span class="chip soon">idle ${staleInfo(it)}d</span>`:''}</div>
+      <div class="td-head"><div class="meta">${tag(it.project)}${dueChip(it.due)}${staleInfo(it)!==null?`<span class="chip soon">idle ${staleInfo(it)}d</span>`:''}${jevChips(it)}</div>
         <button type="button" class="icon-btn close" data-tclose aria-label="Close">${ICON.x}</button></div>
       <textarea id="td-text" class="td-title" rows="2" aria-label="Task">${esc(it.text)}</textarea>
       <div class="ed-grid td-fields">
@@ -359,6 +359,15 @@
         <button type="button" class="btn" data-tclose>Done</button>
       </div></div>`; });
   }
+  // Jev's judgments kept on a task (sized when the brief runs): its size, and whether it looks stuck.
+  function jevChips(it){
+    const j=it.jev; if(!j || it.status==='done') return '';
+    const h=j.hours, size=h==null?'':h<1?`~${Math.max(5,Math.round(h*60))} min`:`~${Math.round(h*10)/10} h`;
+    return (size?`<span class="chip" title="Jev's estimate of the work">${size}</span>`:'')
+      +(j.waiting>=0.6?`<span class="chip soon" title="Jev: probably waiting on someone (${Math.round(j.waiting*100)}%)">waiting</span>`:'')
+      +(j.vague>=0.6?`<span class="chip soon" title="Jev: decide what done looks like first (${Math.round(j.vague*100)}%)">vague</span>`:'');
+  }
+
   // A prompt for Claude Code, drafted from the task and its project; editable, kept on the task.
   function promptSection(it, p){
     const busy=promptBusy===it.id, folder=p?.folder;

@@ -1,11 +1,13 @@
 //! The AI side of Work Desk.
 //!
-//! - A chat model (any OpenAI-compatible service; see provider.rs) tidies each note,
-//!   catches its due date, judges which project it belongs to, and writes the brief.
-//! - Jev (TypeSafe), when there's a key for it, makes the project call instead: it
-//!   returns calibrated probabilities, so a note it isn't sure about waits in the Inbox.
+//! - Jev (TypeSafe; see jev.rs), when there's a key for it, makes the structured calls:
+//!   which project, whether a note fits any or repeats a task, task sizes and so on.
+//! - A chat model (any OpenAI-compatible service; see provider.rs) does the writing: it
+//!   tidies notes into tasks, catches due dates, writes the brief and drafts prompts,
+//!   with Jev's judgments in front of it. Without Jev it makes those calls itself.
 
 use crate::config::Config;
+use crate::jev::{self, Jev, NoteReading};
 use crate::logic;
 use crate::provider::{self, Identified, Provider};
 use crate::store::{Doc, Store};
@@ -13,13 +15,6 @@ use crate::util::*;
 use anyhow::{anyhow, bail, Result};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
-
-/// Jev answers two questions about each note, and both must clear these bars for it to be filed.
-/// They're starting points; check them against how your own notes get filed.
-/// Probability that the note is about one of the projects at all:
-pub const JEV_MIN_FIT: f64 = 0.5;
-/// Confidence in which project (0 when probability is spread evenly over them, 1 when it's all on one):
-pub const JEV_MIN_CONFIDENCE: f64 = 0.5;
 
 #[derive(Clone)]
 pub struct Chat {
@@ -30,12 +25,6 @@ pub struct Chat {
     http: reqwest::Client,
 }
 
-#[derive(Clone)]
-pub struct Jev {
-    key: String,
-    http: reqwest::Client,
-}
-
 /// Whatever AI there are keys for: a chat model, Jev, or both.
 #[derive(Clone)]
 pub struct Ai {
@@ -43,14 +32,23 @@ pub struct Ai {
     pub jev: Option<Jev>,
 }
 
+/// One task made from a note.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewTask {
+    pub text: String,
+    pub due: Option<String>,
+}
+
 /// Where a note went. `triage` is set when it went to the Inbox because no project clearly fit.
 pub struct Filed {
     pub project: String,
-    pub text: String,
-    pub due: Option<String>,
+    /// Usually one; several when the note held several separate to-dos.
+    pub tasks: Vec<NewTask>,
     pub triage: Option<Triage>,
     /// One of the two AIs failed and the other decided alone.
     pub warning: Option<String>,
+    /// An open task Jev thinks this repeats: (id, text, probability).
+    pub duplicate: Option<(String, String, f64)>,
 }
 
 /// Why a note is waiting in the Inbox, and what to do with it.
@@ -71,6 +69,15 @@ impl Triage {
     }
 }
 
+impl Filed {
+    pub fn duplicate_json(&self) -> Value {
+        match &self.duplicate {
+            Some((id, text, p)) => json!({ "id": id, "text": text, "p": p }),
+            None => Value::Null,
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Fit {
     Clear,
@@ -84,38 +91,31 @@ struct ChatFiling {
     fit: Fit,
     reason: Option<String>,
     new_project: Option<String>,
-    task: Option<String>,
-    due: Option<String>,
+    tasks: Vec<NewTask>,
 }
 
-/// Jev's reading of a note: which project, with every project ranked by probability,
-/// and the probability that the note belongs to any of them.
-struct JevPick {
-    choice: String,
-    confidence: f64,
-    ranked: Vec<(String, f64)>,
-    fits: Option<f64>,
-}
-
-/// How a note becomes a task, shared by filing and by tidying a note whose project is already chosen.
+/// How a note becomes tasks, shared by filing and by tidying a note whose project is already chosen.
 macro_rules! rewrite_rules {
     () => {
-        "Rewrite the note as one short, concrete task in the user's own words. Keep names, numbers, gene and \
-variant names, and technical terms exactly as written. Drop filler such as 'remember to' or 'I need to'. \
-Remove the deadline phrase from the task text once you have captured it as a date.\n\
-If the note implies a deadline ('by Friday', 'next Tuesday', 'end of the month', 'tomorrow'), convert it \
-to an ISO date relative to today. A bare weekday means the next occurrence of that day on or after today. \
-Otherwise use null.\n"
+        "Rewrite the note as a short, concrete task in the user's own words. If it holds several separate to-dos \
+(such as action items from a meeting), make each its own task; otherwise make exactly one. Keep names, numbers, \
+gene and variant names, and technical terms exactly as written. Drop filler such as 'remember to' or 'I need to'. \
+Remove a deadline phrase from the task text once you have captured it as a date.\n\
+If a task has a deadline ('by Friday', 'next Tuesday', 'end of the month', 'tomorrow'), convert it to an ISO \
+date relative to today. A bare weekday means the next occurrence of that day on or after today. Otherwise use null.\n\
+When the message includes Jev's judgments, Jev is a calibrated classifier: if it says the note holds several \
+to-dos at 50% or more, split it; below that, keep it as one task unless the note plainly lists separate items.\n"
     };
 }
 
 const TIDY_SYSTEM: &str = concat!(
-    "You turn a quick sticky note into a task for a researcher's project tracker. The project is already chosen.\n",
+    "You turn a quick sticky note into tasks for a researcher's project tracker. The project is already chosen.\n",
     rewrite_rules!(),
-    "Respond with a JSON object only: {\"task\": string, \"due\": string or null}."
+    "Respond with a JSON object only: {\"tasks\": [{\"task\": string, \"due\": string or null}]}."
 );
 
-const FILE_SYSTEM: &str = concat!("You file quick sticky notes into a researcher's project tracker.\n\
+const FILE_SYSTEM: &str = concat!(
+    "You file quick sticky notes into a researcher's project tracker.\n\
 First decide whether the note belongs to one of the listed projects. It belongs to a project only if it is \
 about that project's own work: its named study, paper, collaborators, data or deliverables. Sharing a topic or \
 method is not enough; a note about off-target analysis does not belong to a project just because that project \
@@ -127,23 +127,22 @@ Set fit to \"clear\" when one project obviously fits, \"unsure\" when it could b
 topical, and \"none\" when no project fits. Set project_id to the closest project's id even when unsure, or \
 \"inbox\" if none is close. Unless fit is \"clear\", set new_project to a short name (2 to 4 words, using names \
 from the note) for the project it seems to belong to, or null if it is a stray to-do. Set reason to one short \
-sentence naming the words that decided it.\n",
+sentence naming the words that decided it.\n\
+When the message includes Jev's judgments about the project, they decide it: below 50% that the note fits any \
+project means fit \"none\"; otherwise use Jev's most likely project. Write reason and new_project to agree.\n",
     rewrite_rules!(),
     "Respond with a JSON object only: {\"project_id\": string, \"fit\": \"clear\" | \"unsure\" | \"none\", \
-\"reason\": string, \"new_project\": string or null, \"task\": string, \"due\": string or null}."
+\"reason\": string, \"new_project\": string or null, \"tasks\": [{\"task\": string, \"due\": string or null}]}."
 );
-
-// TypeSafe's docs advise a separate yes/no question over a "none of the above" option.
-const JEV_FITS: &str = "Is `note` about the work of one of the researcher's `projects`: that project's own study, \
-paper, collaborators, data or deliverables? Sharing a topic or method with a project is not enough, and a \
-program, drug, study or filing named in the note that no project mentions points to work that isn't listed.";
-const JEV_WHICH: &str = "Which of the researcher's `projects` is `note` about? The options are the projects' ids.";
 
 const BRIEF_SYSTEM: &str = "You are a calm, practical executive assistant for a researcher who struggles \
 with executive function and with getting things fully finished. Using their task list, decide what \
 matters today. Prefer finishing work that is already in progress or in review over starting new work. \
 Respect deadlines. Point out anything overdue, stalled, or at risk of missing a deadline. Keep every \
 line short, specific and kind; use the exact task wording so they can find it.\n\
+When the message includes a plan that Work Desk computed from Jev's judgments (task sizes, waiting, \
+importance, vagueness), build on it: take focus from its Today list in that order, quick wins from its \
+Quick wins, and warnings from At risk, Waiting and Too vague. Don't invent other time estimates.\n\
 Respond with a JSON object only:\n\
 {\"headline\": one sentence about today,\n \"focus\": up to 3 objects {\"task\": exact task text, \"project\": project name, \"why\": short reason},\n \"watch\": up to 3 short warnings,\n \"quick_wins\": up to 3 tasks likely to take under 30 minutes,\n \"first_step\": one tiny concrete action to start in the next 5 minutes}";
 
@@ -164,6 +163,9 @@ Use only the facts given. When something important is unknown, put a short place
 for the researcher to fill in instead of guessing. If the task is mainly writing prose (a paper section, IND \
 narrative, grant or reviewer response), ask Claude to start by working out an outline with the researcher, \
 not to draft the whole document. Keep the prompt as short as the task allows.\n\
+When the message includes Jev's judgments about the task, use them: shape the prompt for the kind of work Jev \
+names; if Jev puts the task at 50% or more too vague, have Claude first agree with the researcher on what done \
+looks like before changing anything; name only the linked files Jev says are likely needed.\n\
 Respond with a JSON object only: {\"prompt\": string}.";
 
 pub fn http_client() -> reqwest::Client {
@@ -250,31 +252,41 @@ impl Chat {
         serde_json::from_str(trimmed).map_err(|_| anyhow!("{name}'s reply wasn't valid JSON"))
     }
 
-    /// Tidy a note into a task for a project that's already chosen: (task, due).
-    async fn tidy(&self, note: &str, project: &str) -> Result<(Option<String>, Option<String>)> {
-        let today = today_days();
-        let user = format!("Today is {} {}.\nProject: {project}\nNote: \"{}\"", weekday_name(today), iso_from_days(today), note.replace('"', "'"));
-        let v = self.chat_json(TIDY_SYSTEM, &user, 300).await?;
-        let f = read_filing(&v, &[]);
-        Ok((f.task, f.due))
-    }
-
-    async fn file(&self, note: &str, projects: &[Doc], items: &[Doc]) -> Result<ChatFiling> {
+    /// Tidy a note into tasks for a project that's already chosen.
+    async fn tidy(&self, note: &str, project: &str, jev_facts: Option<&str>) -> Result<Vec<NewTask>> {
         let today = today_days();
         let user = format!(
-            "Today is {} {}.\n\nProjects:\n{}\nNote: \"{}\"",
+            "Today is {} {}.\nProject: {project}\nNote: \"{}\"\n{}",
+            weekday_name(today),
+            iso_from_days(today),
+            note.replace('"', "'"),
+            jev_facts.unwrap_or("")
+        );
+        let v = self.chat_json(TIDY_SYSTEM, &user, 800).await?;
+        Ok(read_filing(&v, &[]).tasks)
+    }
+
+    async fn file(&self, note: &str, projects: &[Doc], items: &[Doc], jev_facts: Option<&str>) -> Result<ChatFiling> {
+        let today = today_days();
+        let user = format!(
+            "Today is {} {}.\n\nProjects:\n{}\nNote: \"{}\"\n{}",
             weekday_name(today),
             iso_from_days(today),
             logic::classify_context(projects, items),
-            note.replace('"', "'")
+            note.replace('"', "'"),
+            jev_facts.unwrap_or("")
         );
-        let v = self.chat_json(FILE_SYSTEM, &user, 400).await?;
+        let v = self.chat_json(FILE_SYSTEM, &user, 900).await?;
         Ok(read_filing(&v, projects))
     }
 }
 
 fn text_field(v: &Value, k: &str) -> Option<String> {
     v[k].as_str().map(str::trim).filter(|t| !t.is_empty() && *t != "null").map(str::to_string)
+}
+
+fn due_field(v: &Value) -> Option<String> {
+    v["due"].as_str().filter(|d| parse_date(d).is_some()).map(|d| d[..10].to_string())
 }
 
 fn read_filing(v: &Value, projects: &[Doc]) -> ChatFiling {
@@ -285,87 +297,37 @@ fn read_filing(v: &Value, projects: &[Doc]) -> ChatFiling {
         Some("none") => Fit::None,
         _ => Fit::Unsure,
     };
-    ChatFiling {
-        project,
-        fit,
-        reason: text_field(v, "reason"),
-        new_project: text_field(v, "new_project"),
-        task: text_field(v, "task"),
-        due: v["due"].as_str().filter(|d| parse_date(d).is_some()).map(|d| d[..10].to_string()),
-    }
-}
-
-impl Jev {
-    async fn pick(&self, note: &str, projects: &[Doc], items: &[Doc]) -> Result<JevPick> {
-        let ordered = logic::ordered(projects);
-        let criteria: Map<String, Value> = ordered.iter().map(|(pid, p)| (pid.clone(), json!(logic::s(p, "name").unwrap_or(pid)))).collect();
-        let facts: Vec<Value> = ordered.iter().map(|(pid, p)| logic::project_facts(pid, p, items)).collect();
-        let body = json!({
-            "model": provider::JEV_MODEL,
-            "state": {"note": note, "projects": facts},
-            "questions": {
-                "fits": {"type": "noul", "instructions": JEV_FITS},
-                "project": {"type": "choice", "instructions": JEV_WHICH, "criteria": criteria}
-            }
-        });
-        // Busy or rate-limited: TypeSafe asks for a short wait before retrying.
-        let mut tries = 0;
-        let (status, v) = loop {
-            let resp = self.http.post(provider::JEV_URL).bearer_auth(&self.key).json(&body).send().await.map_err(|e| anyhow!("Couldn't reach Jev: {e}"))?;
-            let status = resp.status().as_u16();
-            if matches!(status, 429 | 529) && tries < 1 {
-                tries += 1;
-                tokio::time::sleep(Duration::from_millis(1500)).await;
-                continue;
-            }
-            break (status, resp.json::<Value>().await.unwrap_or(Value::Null));
-        };
-        match status {
-            200..=299 => {}
-            401 | 403 => bail!("TypeSafe turned down the Jev key."),
-            429 => bail!("Jev is limiting requests."),
-            529 => bail!("Jev is overloaded right now."),
-            s => bail!("Jev returned {s}: {}", v.to_string().chars().take(200).collect::<String>()),
-        }
-        let mut pick = read_pick(&v["answers"]["project"]).ok_or_else(|| anyhow!("Jev's answer was missing the project choice"))?;
-        pick.fits = v["answers"]["fits"]["noul"].as_f64();
-        Ok(pick)
-    }
-}
-
-fn read_pick(a: &Value) -> Option<JevPick> {
-    let choice = a["choice"].as_str()?.to_string();
-    let mut ranked: Vec<(String, f64)> = a["probabilities"]
-        .as_object()
-        .map(|m| m.iter().filter_map(|(k, p)| Some((k.clone(), p.as_f64()?))).collect())
+    // {"tasks": [...]}, or the older single {"task", "due"}
+    let mut tasks: Vec<NewTask> = v["tasks"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| Some(NewTask { text: text_field(t, "task")?, due: due_field(t) })).collect())
         .unwrap_or_default();
-    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
-    Some(JevPick { choice, confidence: a["confidence"].as_f64().unwrap_or(0.0), ranked, fits: None })
+    if tasks.is_empty() {
+        if let Some(text) = text_field(v, "task") {
+            tasks.push(NewTask { text, due: due_field(v) });
+        }
+    }
+    ChatFiling { project, fit, reason: text_field(v, "reason"), new_project: text_field(v, "new_project"), tasks }
 }
 
-/// Combine the two readings of a note. Jev's calibrated pick decides the project when there is
-/// one; the chat model always supplies the tidied wording, the due date and any new-project name.
-fn decide(note: &str, projects: &[Doc], chat: Option<ChatFiling>, jev: Option<JevPick>) -> Filed {
+/// Combine the two readings of a note. Jev's calibrated judgments decide the project when there
+/// are some; the chat model supplies the tasks' wording, due dates and any new-project name.
+fn decide(note: &str, projects: &[Doc], chat: Option<ChatFiling>, jev: Option<&NoteReading>) -> Filed {
     let name = |id: &str| logic::project_name(projects, id);
-    let (text, due, suggest) = match &chat {
-        Some(c) => (c.task.clone().unwrap_or_else(|| note.to_string()), c.due.clone(), c.new_project.clone()),
-        None => (note.to_string(), None, None),
+    let (tasks, suggest) = match &chat {
+        Some(c) if !c.tasks.is_empty() => (c.tasks.clone(), c.new_project.clone()),
+        Some(c) => (vec![NewTask { text: note.to_string(), due: None }], c.new_project.clone()),
+        None => (vec![NewTask { text: note.to_string(), due: None }], None),
     };
     let chat_doubts = chat.as_ref().map_or(true, |c| c.fit != Fit::Clear);
     let chat_reason = chat.as_ref().and_then(|c| c.reason.clone()).filter(|_| chat_doubts);
-    let inbox = |reason: String, closest: Option<String>, by| Filed {
-        project: "inbox".into(),
-        text: text.clone(),
-        due: due.clone(),
-        triage: Some(Triage { reason, suggest: suggest.clone(), closest, by }),
-        warning: None,
-    };
-    if let Some(j) = jev {
+    let filed = |project: String, triage| Filed { project, tasks: tasks.clone(), triage, warning: None, duplicate: None };
+    if let Some(pick) = jev.and_then(|j| j.pick.as_ref()) {
         let known = |id: &str| projects.iter().any(|(pid, _)| pid == id);
-        let close: Vec<&String> = j.ranked.iter().map(|(id, _)| id).filter(|id| known(id)).take(2).collect();
-        let fits = j.fits.map_or(true, |p| p >= JEV_MIN_FIT);
-        if fits && known(&j.choice) && j.confidence >= JEV_MIN_CONFIDENCE {
-            return Filed { project: j.choice, text, due, triage: None, warning: None };
+        let close: Vec<&String> = pick.ranked.iter().map(|(id, _)| id).filter(|id| known(id)).take(2).collect();
+        let fits = jev.and_then(|j| j.fits).map_or(true, |p| p >= jev::MIN_FIT);
+        if fits && known(&pick.choice) && pick.confidence >= jev::MIN_CONFIDENCE {
+            return filed(pick.choice.clone(), None);
         }
         let reason = if !fits {
             chat_reason.unwrap_or_else(|| "None of your projects clearly covers this.".into())
@@ -374,56 +336,70 @@ fn decide(note: &str, projects: &[Doc], chat: Option<ChatFiling>, jev: Option<Je
         } else {
             "Jev wasn't sure which project this is.".into()
         };
-        return inbox(reason, close.first().map(|s| s.to_string()), "jev");
+        let closest = close.first().map(|s| s.to_string());
+        return filed("inbox".into(), Some(Triage { reason, suggest, closest, by: "jev" }));
     }
-    let c = chat.as_ref().expect("decide needs at least one reading");
-    match (&c.project, c.fit) {
-        (Some(pid), Fit::Clear) => Filed { project: pid.clone(), text, due, triage: None, warning: None },
-        (closest, _) => inbox(chat_reason.unwrap_or_else(|| "Work Desk couldn't tell which project this belongs to.".into()), closest.clone(), "model"),
+    match chat.as_ref().map(|c| (&c.project, c.fit)) {
+        Some((Some(pid), Fit::Clear)) => filed(pid.clone(), None),
+        other => {
+            let reason = chat_reason.unwrap_or_else(|| "Work Desk couldn't tell which project this belongs to.".into());
+            let closest = other.and_then(|(p, _)| p.clone());
+            filed("inbox".into(), Some(Triage { reason, suggest, closest, by: "model" }))
+        }
     }
 }
 
 impl Ai {
     pub fn from_config(cfg: &Config, http: &reqwest::Client) -> Option<Ai> {
         let chat = cfg.chat().map(|c| Chat::new(c.key, c.provider, c.base, c.model, http));
-        let jev = cfg.jev_key().map(|key| Jev { key, http: http.clone() });
+        let jev = cfg.jev_key().map(|key| Jev::new(key, http));
         (chat.is_some() || jev.is_some()).then_some(Ai { chat, jev })
     }
 
-    /// Decide which project a note belongs to (or that none clearly does), tidy its wording,
-    /// and pull out a due date.
+    /// Decide which project a note belongs to (or that none clearly does), turn it into tasks
+    /// with due dates, and check whether it repeats an open task. Jev answers first; the chat
+    /// model writes with Jev's answers in front of it.
     pub async fn file_note(&self, note: &str, projects: &[Doc], items: &[Doc]) -> Result<Filed> {
-        let chat = async {
-            match &self.chat {
-                Some(c) => Some(c.file(note, projects, items).await),
-                None => None,
-            }
-        };
-        let jev = async {
-            match &self.jev {
-                Some(j) => Some(j.pick(note, projects, items).await),
-                None => None,
-            }
-        };
-        let (chat, jev) = tokio::join!(chat, jev);
         let mut warning = None;
-        let (chat, jev) = match (chat, jev) {
-            (Some(Err(e)), None) | (None, Some(Err(e))) | (Some(Err(e)), Some(Err(_))) => return Err(e),
-            (Some(Err(e)), Some(Ok(j))) => {
-                warning = Some(format!("Kept your wording: {e}"));
-                (None, Some(j))
-            }
-            (Some(Ok(c)), Some(Err(e))) => {
-                warning = Some(format!("Jev didn't answer, so the chat model decided alone: {e}"));
-                (Some(c), None)
-            }
-            (c, j) => (c.and_then(Result::ok), j.and_then(Result::ok)),
+        let reading = match &self.jev {
+            Some(j) => match j.read_note(note, projects, items).await {
+                Ok(r) => Some(r),
+                Err(e) if self.chat.is_some() => {
+                    warning = Some(format!("Jev didn't answer, so the chat model decided alone: {e}"));
+                    None
+                }
+                Err(e) => return Err(e),
+            },
+            None => None,
         };
-        if chat.is_none() && jev.is_none() {
+        let facts = reading.as_ref().map(|r| r.facts(projects));
+        let chat = match &self.chat {
+            Some(c) => match c.file(note, projects, items, facts.as_deref()).await {
+                Ok(f) => Some(f),
+                Err(e) if reading.is_some() => {
+                    warning = Some(format!("Kept your wording: {e}"));
+                    None
+                }
+                Err(e) => return Err(e),
+            },
+            None => None,
+        };
+        if chat.is_none() && reading.is_none() {
             bail!("No AI key yet.");
         }
-        let mut filed = decide(note, projects, chat, jev);
+        let mut filed = decide(note, projects, chat, reading.as_ref());
         filed.warning = warning;
+        if let (Some(j), [only], false) = (&self.jev, filed.tasks.as_slice(), filed.project == "inbox") {
+            let open: Vec<(String, String)> = items
+                .iter()
+                .filter(|(_, m)| logic::s(m, "project") == Some(filed.project.as_str()) && logic::is_open(m))
+                .filter_map(|(id, m)| Some((id.clone(), logic::s(m, "text")?.to_string())))
+                .collect();
+            if let Ok(Some((id, p))) = j.duplicate_of(&only.text, &open).await {
+                let text = open.iter().find(|(i, _)| *i == id).map(|(_, t)| t.clone()).unwrap_or_default();
+                filed.duplicate = Some((id, text, p));
+            }
+        }
         Ok(filed)
     }
 
@@ -433,16 +409,52 @@ impl Ai {
             .ok_or_else(|| anyhow!("{what} needs a chat model. Add a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter."))
     }
 
-    pub async fn brief(&self, projects: &[Doc], items: &[Doc]) -> Result<Value> {
-        self.writer("The daily brief")?.chat_json(BRIEF_SYSTEM, &logic::brief_context(projects, items), 900).await
+    /// The start-of-day brief. With Jev, every open task is sized and judged first (only the
+    /// ones that changed), Work Desk works out a plan from that, and the chat model writes it up.
+    pub async fn brief(&self, store: &Store, hours_per_day: f64) -> Result<Value> {
+        let chat = self.writer("The daily brief")?;
+        let mut trouble = None;
+        if let Some(j) = &self.jev {
+            match j.judge_open_tasks(store).await {
+                Ok((_, e)) => trouble = e,
+                Err(e) => trouble = Some(e.to_string()),
+            }
+        }
+        let projects = store.list("projects")?;
+        let items = store.list("items")?;
+        let mut context = logic::brief_context(&projects, &items);
+        if let Some(plan) = logic::plan_text(&projects, &items, hours_per_day) {
+            context.push('\n');
+            context.push_str(&plan);
+        }
+        let mut v = chat.chat_json(BRIEF_SYSTEM, &context, 900).await?;
+        if let Some(t) = trouble {
+            v["note"] = json!(format!("Jev couldn't judge some tasks: {t}"));
+        }
+        Ok(v)
     }
 }
 
 /// Draft a prompt for Claude Code from a task and its project, and keep it on the task.
 pub async fn draft_prompt(store: &Store, ai: &Ai, id: &str) -> Result<String> {
+    let chat = ai.writer("Drafting a prompt")?;
     let item = store.get("items", id)?.ok_or_else(|| anyhow!("There's no task with id {id}."))?;
-    let context = logic::prompt_context(id, &item, &store.list("projects")?, &store.list("items")?);
-    let v = ai.writer("Drafting a prompt")?.chat_json(PROMPT_SYSTEM, &context, 1500).await?;
+    let projects = store.list("projects")?;
+    let mut context = logic::prompt_context(id, &item, &projects, &store.list("items")?);
+    if let Some(j) = &ai.jev {
+        let project = logic::s(&item, "project").and_then(|pid| projects.iter().find(|(p, _)| p == pid)).map(|(_, p)| p);
+        let folder = project.and_then(|p| logic::s(p, "folder"));
+        let files: Vec<String> = [Some(&item), project]
+            .into_iter()
+            .flatten()
+            .flat_map(logic::file_paths)
+            .map(|f| logic::from_folder(f, folder))
+            .collect();
+        if let Ok(r) = j.read_for_prompt(&item, project, &files).await {
+            context.push_str(&r.facts());
+        }
+    }
+    let v = chat.chat_json(PROMPT_SYSTEM, &context, 1500).await?;
     let prompt = text_field(&v, "prompt").ok_or_else(|| anyhow!("The draft came back empty. Try again."))?;
     let mut patch = Map::new();
     patch.insert("prompt".into(), json!(prompt));
@@ -458,7 +470,7 @@ pub async fn connect(mut cfg: Config, http: &reqwest::Client, key: &str, forced:
     match provider::identify(http, &key, forced).await? {
         Identified::Jev => {
             cfg.jev_key = Some(key);
-            Ok((cfg, "Saved your Jev key. Jev now checks which project each note belongs to.".into()))
+            Ok((cfg, "Saved your Jev key. Jev now makes the structured calls: projects, task sizes, duplicates and more.".into()))
         }
         Identified::Chat { provider, model } => {
             let (base, model) = if provider.id == "custom" {
@@ -486,14 +498,14 @@ pub async fn connect(mut cfg: Config, http: &reqwest::Client, key: &str, forced:
 pub struct Captured {
     pub id: String,
     pub doc: Map<String, Value>,
-    pub notice: Option<String>,
 }
 
-/// Create an item. When `project` is "auto", Work Desk chooses the project
-/// (falling back to the Inbox with a notice if it can't). When the project is already
-/// chosen, the chat model still tidies the note into a task, unless `tidy: false`
-/// says the text has already been through it (the page's confirm step).
-pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>) -> Result<Captured> {
+/// Create items from a note: usually one, several when the note held several to-dos.
+/// When `project` is "auto", Work Desk chooses the project (falling back to the Inbox with a
+/// notice if it can't). When the project is already chosen, the note is still tidied into
+/// tasks, unless `tidy: false` says the text has already been through that (the page's
+/// confirm step). Returns the items and a notice for the person, if any.
+pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>) -> Result<(Vec<Captured>, Option<String>)> {
     let now = now_iso();
     let text = logic::s(&doc, "text").map(str::trim).unwrap_or("").to_string();
     if text.is_empty() {
@@ -501,51 +513,52 @@ pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>
     }
     doc.insert("text".into(), json!(text));
     let tidy = doc.remove("tidy").and_then(|v| v.as_bool()).unwrap_or(true);
-    let mut notice = None;
+    let mut notes: Vec<String> = Vec::new();
+    let mut tasks = vec![NewTask { text: text.clone(), due: None }];
     let chosen = logic::s(&doc, "project").filter(|p| *p != "auto").map(str::to_string);
-    if let (Some(pid), true, Some(chat)) = (&chosen, tidy, ai.and_then(|a| a.chat.as_ref())) {
-        let projects = store.list("projects")?;
-        match chat.tidy(&text, &logic::project_name(&projects, pid)).await {
-            Ok((task, due)) => {
-                if let Some(t) = task.filter(|t| *t != text) {
-                    doc.insert("text".into(), json!(t));
-                    doc.insert("original".into(), json!(text));
-                }
-                if let (Some(d), None) = (due, logic::s(&doc, "due")) {
-                    doc.insert("due".into(), json!(d));
-                }
+    if let (Some(pid), true, Some(ai)) = (&chosen, tidy, ai) {
+        if let Some(chat) = &ai.chat {
+            let projects = store.list("projects")?;
+            // Jev's only question here is whether the note holds several to-dos.
+            let facts = match &ai.jev {
+                Some(j) => j.read_note(&text, &[], &[]).await.ok().map(|r| r.facts(&projects)),
+                None => None,
+            };
+            match chat.tidy(&text, &logic::project_name(&projects, pid), facts.as_deref()).await {
+                Ok(t) if !t.is_empty() => tasks = t,
+                Ok(_) => {}
+                Err(e) => notes.push(format!("Saved as typed. {e}")),
             }
-            Err(e) => notice = Some(format!("Saved as typed. {e}")),
         }
     }
     if chosen.is_none() {
         doc.insert("project".into(), json!("inbox"));
         match ai {
-            None => notice = Some("Saved to the Inbox. Add an API key under AI keys to have notes filed for you.".into()),
+            None => notes.push("Saved to the Inbox. Add an API key under AI keys to have notes filed for you.".into()),
             Some(ai) => {
                 let projects = store.list("projects")?;
                 let items = store.list("items")?;
                 match ai.file_note(&text, &projects, &items).await {
                     Ok(f) => {
                         doc.insert("project".into(), json!(f.project));
-                        if f.text != text {
-                            doc.insert("text".into(), json!(f.text));
-                            doc.insert("original".into(), json!(text));
-                        }
-                        if let (Some(d), None) = (&f.due, logic::s(&doc, "due")) {
-                            doc.insert("due".into(), json!(d));
-                        }
                         if let Some(t) = &f.triage {
                             doc.insert("triage".into(), t.to_json());
-                            notice = Some(format!("Not sure where this goes. {} It's in the Inbox.", t.reason));
+                            notes.push(format!("Not sure where this goes. {} It's in the Inbox.", t.reason));
                         } else if let Some(w) = &f.warning {
-                            notice = Some(format!("Filed under {}. {w}", logic::project_name(&projects, &f.project)));
+                            notes.push(format!("Filed under {}. {w}", logic::project_name(&projects, &f.project)));
                         }
+                        if let Some((_, t, p)) = &f.duplicate {
+                            notes.push(format!("Jev thinks this may repeat “{t}” ({:.0}%).", p * 100.0));
+                        }
+                        tasks = f.tasks;
                     }
-                    Err(e) => notice = Some(format!("Saved to the Inbox. {e}")),
+                    Err(e) => notes.push(format!("Saved to the Inbox. {e}")),
                 }
             }
         }
+    }
+    if tasks.len() > 1 {
+        notes.push(format!("Split into {} tasks.", tasks.len()));
     }
     for (k, v) in [("status", json!("open")), ("stage", json!("todo")), ("kind", json!("task"))] {
         doc.entry(k).or_insert(v);
@@ -553,9 +566,21 @@ pub async fn capture(store: &Store, ai: Option<&Ai>, mut doc: Map<String, Value>
     doc.entry("created").or_insert(json!(now));
     doc.insert("updated".into(), json!(now));
     doc.remove("id");
-    let id = store.new_id("t");
-    store.put("items", &id, &doc)?;
-    Ok(Captured { id, doc, notice })
+    let mut out = Vec::new();
+    for t in tasks {
+        let mut d = doc.clone();
+        if t.text != text {
+            d.insert("text".into(), json!(t.text));
+            d.entry("original").or_insert(json!(text));
+        }
+        if let (Some(due), None) = (&t.due, logic::s(&d, "due")) {
+            d.insert("due".into(), json!(due));
+        }
+        let id = store.new_id("t");
+        store.put("items", &id, &d)?;
+        out.push(Captured { id, doc: d });
+    }
+    Ok((out, (!notes.is_empty()).then(|| notes.join(" "))))
 }
 
 /// File every open Inbox note. Notes that still don't clearly fit stay, with a fresh reason.
@@ -575,7 +600,7 @@ pub async fn sort_inbox(store: &Store, ai: &Ai) -> Result<(usize, usize, Option<
                     None => {
                         patch.insert("project".into(), json!(f.project));
                         patch.insert("triage".into(), Value::Null);
-                        if let (Some(d), None) = (&f.due, logic::s(m, "due")) {
+                        if let (Some(d), None) = (f.tasks.first().and_then(|t| t.due.as_ref()), logic::s(m, "due")) {
                             patch.insert("due".into(), json!(d));
                         }
                         moved += 1;
@@ -609,24 +634,27 @@ mod tests {
         Some(read_filing(&v, &projects()))
     }
 
-    fn jev(fits: f64, choice: &str, conf: f64, probs: Value) -> Option<JevPick> {
-        let mut p = read_pick(&json!({ "type": "choice", "choice": choice, "confidence": conf, "probabilities": probs }))?;
-        p.fits = Some(fits);
-        Some(p)
+    fn jev(fits: f64, choice: &str, conf: f64, probs: Value) -> NoteReading {
+        let pick = jev::read_pick(&json!({ "type": "choice", "choice": choice, "confidence": conf, "probabilities": probs }));
+        NoteReading { fits: Some(fits), pick, several: Some(0.1) }
+    }
+
+    fn one(text: &str, due: Option<&str>) -> Vec<NewTask> {
+        vec![NewTask { text: text.into(), due: due.map(str::to_string) }]
     }
 
     const NOTE: &str = "CHARM off-target notes for the IND";
 
     #[test]
     fn chat_alone() {
-        let f = decide(NOTE, &projects(), chat(json!({"project_id": "rnaseq", "fit": "clear", "task": "Tidy", "due": "2026-11-02"})), None);
-        assert_eq!((f.project.as_str(), f.text.as_str(), f.due.as_deref()), ("rnaseq", "Tidy", Some("2026-11-02")));
+        let f = decide(NOTE, &projects(), chat(json!({"project_id": "rnaseq", "fit": "clear", "tasks": [{"task": "Tidy", "due": "2026-11-02"}]})), None);
+        assert_eq!((f.project.as_str(), f.tasks), ("rnaseq", one("Tidy", Some("2026-11-02"))));
         assert!(f.triage.is_none());
 
         let f = decide(
             NOTE,
             &projects(),
-            chat(json!({"project_id": "rnaseq", "fit": "unsure", "reason": "Mentions CHARM.", "new_project": "CHARM IND", "task": "Tidy", "due": null})),
+            chat(json!({"project_id": "rnaseq", "fit": "unsure", "reason": "Mentions CHARM.", "new_project": "CHARM IND", "tasks": [{"task": "Tidy", "due": null}]})),
             None,
         );
         assert_eq!(f.project, "inbox");
@@ -635,28 +663,40 @@ mod tests {
             Some(Triage { reason: "Mentions CHARM.".into(), suggest: Some("CHARM IND".into()), closest: Some("rnaseq".into()), by: "model" })
         );
 
-        // a project id that doesn't exist is never trusted
+        // a project id that doesn't exist is never trusted; the older single-task reply still reads
         let f = decide(NOTE, &projects(), chat(json!({"project_id": "charm", "fit": "clear", "task": "Tidy"})), None);
-        assert_eq!(f.project, "inbox");
+        assert_eq!((f.project.as_str(), f.tasks), ("inbox", one("Tidy", None)));
         assert_eq!(f.triage.unwrap().closest, None);
     }
 
     #[test]
+    fn meeting_notes_split() {
+        let f = decide(
+            NOTE,
+            &projects(),
+            chat(json!({"project_id": "rnaseq", "fit": "clear", "tasks": [{"task": "Table the knockup data", "due": null}, {"task": "Ask Plasmidsaurus about flow cells", "due": "2026-10-24"}]})),
+            None,
+        );
+        assert_eq!(f.tasks.len(), 2);
+        assert_eq!(f.tasks[1].due.as_deref(), Some("2026-10-24"));
+    }
+
+    #[test]
     fn jev_decides_the_project() {
-        let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "task": "Tidy"}));
+        let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "tasks": [{"task": "Tidy"}]}));
         // confident: filed, with the chat model's wording
-        let f = decide(NOTE, &projects(), clear, jev(0.9, "tox", 0.8, json!({"tox": 0.9, "rnaseq": 0.1})));
-        assert_eq!((f.project.as_str(), f.text.as_str()), ("tox", "Tidy"));
+        let f = decide(NOTE, &projects(), clear, Some(&jev(0.9, "tox", 0.8, json!({"tox": 0.9, "rnaseq": 0.1}))));
+        assert_eq!((f.project.as_str(), f.tasks), ("tox", one("Tidy", None)));
 
         // doesn't fit any project: Inbox, and the chat model's confident reason isn't shown as the reason
-        let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "new_project": null, "task": "Tidy"}));
-        let f = decide(NOTE, &projects(), clear, jev(0.2, "rnaseq", 0.9, json!({"rnaseq": 0.95, "tox": 0.05})));
+        let clear = chat(json!({"project_id": "rnaseq", "fit": "clear", "reason": "Off-target.", "new_project": null, "tasks": [{"task": "Tidy"}]}));
+        let f = decide(NOTE, &projects(), clear, Some(&jev(0.2, "rnaseq", 0.9, json!({"rnaseq": 0.95, "tox": 0.05}))));
         let t = f.triage.unwrap();
         assert_eq!((t.reason.as_str(), t.closest.as_deref(), t.by), ("None of your projects clearly covers this.", Some("rnaseq"), "jev"));
 
-        // torn between two
-        let f = decide(NOTE, &projects(), None, jev(0.9, "rnaseq", 0.06, json!({"rnaseq": 0.53, "tox": 0.47})));
-        assert_eq!(f.text, NOTE);
+        // torn between two, and no chat model: the note is kept as typed
+        let f = decide(NOTE, &projects(), None, Some(&jev(0.9, "rnaseq", 0.06, json!({"rnaseq": 0.53, "tox": 0.47}))));
+        assert_eq!(f.tasks, one(NOTE, None));
         assert_eq!(f.triage.unwrap().reason, "It could be RNAseq or Tox.");
     }
 

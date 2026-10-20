@@ -85,6 +85,19 @@ fn parse_file(text: &str) -> Result<Colls> {
     Ok(colls)
 }
 
+fn apply(doc: &mut Map<String, Value>, patch: &Map<String, Value>) {
+    for (k, v) in patch {
+        if k == "id" {
+            continue;
+        }
+        if v.is_null() {
+            doc.remove(k);
+        } else {
+            doc.insert(k.clone(), v.clone());
+        }
+    }
+}
+
 /// Latest timestamp on a document, used to decide which copy is newer.
 pub fn doc_time(m: &Map<String, Value>) -> i64 {
     ["updated", "done_at", "created"]
@@ -249,19 +262,32 @@ impl Store {
         let mut inner = self.inner.lock().unwrap();
         self.refresh(&mut inner);
         let Some(Value::Object(doc)) = inner.colls.get_mut(coll).unwrap().get_mut(id) else { return Ok(None) };
-        for (k, v) in patch {
-            if k == "id" {
-                continue;
-            }
-            if v.is_null() {
-                doc.remove(k);
-            } else {
-                doc.insert(k.clone(), v.clone());
-            }
-        }
+        apply(doc, patch);
         let out = doc.clone();
         self.save(&mut inner)?;
         Ok(Some(out))
+    }
+
+    /// `merge` for several documents, saving the file once. Missing documents are skipped.
+    pub fn merge_many(&self, coll: &str, patches: &[(String, Map<String, Value>)]) -> Result<usize> {
+        check_collection(coll)?;
+        if patches.is_empty() {
+            return Ok(0);
+        }
+        let mut inner = self.inner.lock().unwrap();
+        self.refresh(&mut inner);
+        let docs = inner.colls.get_mut(coll).unwrap();
+        let mut n = 0;
+        for (id, patch) in patches {
+            if let Some(Value::Object(doc)) = docs.get_mut(id) {
+                apply(doc, patch);
+                n += 1;
+            }
+        }
+        if n > 0 {
+            self.save(&mut inner)?;
+        }
+        Ok(n)
     }
 
     pub fn delete(&self, coll: &str, id: &str) -> Result<bool> {
@@ -275,6 +301,7 @@ impl Store {
         Ok(found)
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         let mut inner = self.inner.lock().unwrap();
         self.refresh(&mut inner);

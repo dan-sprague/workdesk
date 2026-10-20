@@ -48,11 +48,15 @@ rep("([...bsel.options].some(o=>o.value===bcur)?bcur:'inbox')",
 rep("const project = filter!=='all' ? filter : ($('lane-proj')?.value || 'inbox');",
     "const project = filter!=='all' ? filter : ($('lane-proj')?.value || 'auto');")
 # "Sort it for me": Work Desk suggests where a note goes and you confirm before it's saved
-rep("    await db.collection('items').add(doc);\n", """    let newProject=null;
-    if(project==='auto'){ const c=await confirmFiling(text); if(!c) return null; Object.assign(doc, c.doc); newProject=c.newProject; }
-    const r=await db.collection('items').add(doc);
-    if(newProject) startProjectFor(newProject, r.id);
-    return r;
+rep("    await db.collection('items').add(doc);\n", """    if(project==='auto'){
+      const c=await confirmFiling(text); if(!c) return null;
+      let first=null; const ids=[];
+      for(const d of c.docs){ const r=await db.collection('items').add({...doc, ...d}); first=first||r; ids.push(r.id); }
+      if(c.newProject) startProjectFor(c.newProject, ids);
+      if(ids.length>1) first={...first, notice:`Filed ${ids.length} tasks under ${pName(first.project)}.`};
+      return first;
+    }
+    return await db.collection('items').add(doc);
 """)
 rep("""      await db.collection('items').add({text, project:$('cap-proj').value, status:'open', stage:'todo', kind:'task', created:new Date().toISOString()});
       $('cap-text').value=''; $('cap-status').textContent='Added.';
@@ -79,6 +83,7 @@ rep('    <div class="desk-main">\n',
         <div class="panel-head"><h2 class="sec-h" id="k-h">AI keys</h2><button class="mini" id="ai-close" type="button" hidden>Done</button></div>
         <p class="alert-detail" style="margin:0">Paste an API key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter to have notes filed for you and to get a daily brief. Work Desk works out which service a key is for. Add a TypeSafe key as well and Jev will check whether each note really fits a project. Keys stay on this computer.</p>
         <ul class="ai-state" id="ai-state"></ul>
+        <form id="hours-form" class="note-row hours-row"><label for="hours-in">Hours of project work on a typical day</label><input type="number" id="hours-in" min="0.5" max="24" step="0.5"><button class="mini" type="submit">Save</button></form>
         <form id="key-form" class="note-row">
           <input type="password" id="ai-key" placeholder="Paste an API key" autocomplete="off" aria-label="API key">
           <button class="btn" type="submit">Save key</button>
@@ -133,6 +138,8 @@ rep("@media (max-width:620px){.tl{--lw:150px}}", """@media (max-width:620px){.tl
 .ai-state{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.88rem}
 .ai-state b{display:inline-block;min-width:92px}
 .ai-state .empty{display:inline;padding:0}
+.hours-row{align-items:center;font-size:.88rem;color:var(--muted)}
+.hours-row input{flex:0 0 80px!important;font-family:inherit!important}
 .triage{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin-top:-4px}
 .triage-why{margin:0;font-size:.82rem;color:var(--muted)}
 .triage-by{font-family:var(--mono);font-size:.66rem;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
@@ -142,6 +149,11 @@ rep("@media (max-width:620px){.tl{--lw:150px}}", """@media (max-width:620px){.tl
 .fd-why b{color:var(--fg)}
 .fd-orig summary{cursor:pointer;color:var(--muted);font-size:.85rem}
 .fd-orig p{margin:6px 0 0;font-size:.85rem;color:var(--muted);white-space:pre-wrap}
+.fd-tasks{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.fd-task{display:grid;grid-template-columns:minmax(0,1fr) 150px 28px;gap:8px;align-items:start}
+.fd-task textarea{width:100%;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;resize:vertical}
+.fd-task input{height:36px;width:100%}
+@media (max-width:520px){.fd-task{grid-template-columns:minmax(0,1fr) 28px}.fd-task input{grid-column:1}}
 """)
 
 # ---- local backend + new behaviour ----
@@ -180,6 +192,7 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
   function filedMsg(r){
     if(!r) return 'Added.';
     if(r.notice) return r.notice;
+    if(r.also?.length) return `Filed ${r.also.length+1} tasks under ${pName(r.project)}.`;
     return `Filed under ${pName(r.project)}${r.due?` · due ${fmt(r.due)}`:''}: “${r.text}”`;
   }
   function flash(id,msg){ $(id).textContent=msg; setTimeout(()=>{ if($(id).textContent===msg) $(id).textContent=''; },7000); }
@@ -191,7 +204,8 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
       const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName;
       $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
       $('ai-state').innerHTML=`<li><b>Chat model</b> ${s.chat?`${esc(s.chat)} <button class="linkish" type="button" data-forget="chat">Remove</button>`:'<span class="empty">none yet</span>'}</li>`
-        +`<li><b>Jev</b> ${s.jev?'on: checks which project each note fits <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
+        +`<li><b>Jev</b> ${s.jev?'on: decides projects, spots repeats, sizes tasks for the brief, and reads tasks before prompts <button class="linkish" type="button" data-forget="jev">Remove</button>':'<span class="empty">optional, not set</span>'}</li>`;
+      if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
       $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
         +` · <button class="linkish" type="button" id="ai-open">AI keys</button>`;
       if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
@@ -205,6 +219,11 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
       if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>'; }
     catch(err){ $('key-status').textContent=err.message; }
   });
+  $('hours-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    try{ await db.call('POST','/api/settings',{hours_per_day:parseFloat($('hours-in').value)}); $('key-status').textContent='Saved. The brief plans around that.'; }
+    catch(err){ $('key-status').textContent=err.message; }
+  });
   document.addEventListener('click', async e=>{
     if(e.target.closest('#ai-open')){ keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'nearest'}); $('ai-key').focus(); return; }
     if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
@@ -216,60 +235,78 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
   // ---- "Sort it for me": suggest, then confirm ----
   // Nothing is saved until you press File. The dialog also works with no AI: pick the project yourself.
   let fdSug=null, fdNote='', fdResolve=null;
-  const goLabel=pid=>pid==='inbox'?'Put in the Inbox':`File under ${pName(pid)}`;
+  const goLabel=(pid,n=1)=>{ const what=n>1?`${n} tasks`:''; return pid==='inbox'?`Put ${what||'it'} in the Inbox`:`File ${what?what+' ':''}under ${pName(pid)}`; };
+  const fdCount=()=>$('file-dlg').querySelectorAll('.fd-task').length||1;
   async function confirmFiling(text){
     let s;
     try{ s=await db.call('POST','/api/suggest',{text}); }
     catch(err){ s={project:'inbox', text, due:null, error:err.message}; }
     const r=await askWhere(s, text); if(!r) return null;
-    const doc={text:r.text, project:r.project, tidy:false};
-    if(r.text!==text) doc.original=text;
-    if(r.due) doc.due=r.due;
-    if(r.project==='inbox' && s.triage) doc.triage=s.triage;
-    return {doc, newProject:r.newProject||null};
+    const docs=r.tasks.map(t=>{
+      const doc={text:t.text, project:r.project, tidy:false};
+      if(t.text!==text) doc.original=text;
+      if(t.due) doc.due=t.due;
+      if(r.project==='inbox' && s.triage) doc.triage=s.triage;
+      return doc;
+    });
+    return {docs, newProject:r.newProject||null};
   }
   function askWhere(s, note){
     fdSug=s; fdNote=note;
     const d=$('file-dlg'), t=s.triage;
+    const tasks=(s.tasks&&s.tasks.length)?s.tasks:[{text:note, due:null}];
+    const dup=s.duplicate?`<p class="warn" style="margin:0">This may already be a task: “${esc(s.duplicate.text)}” <span class="triage-by" title="Jev's estimate">Jev ${Math.round(s.duplicate.p*100)}%</span></p>`:'';
+    const fields=tasks.length===1
+      ? `<textarea id="fd-text" class="td-title" rows="2" aria-label="Task">${esc(tasks[0].text)}</textarea>`
+      : `<p class="fd-why">Work Desk split this into ${tasks.length} tasks. Edit or remove any of them.</p>
+         <ul class="fd-tasks">${tasks.map((x,i)=>`<li class="fd-task" data-i="${i}"><textarea rows="2" aria-label="Task ${i+1}">${esc(x.text)}</textarea><input type="date" aria-label="Due" value="${esc(x.due||'')}"><button type="button" class="icon-btn" data-fdrm aria-label="Remove this task">${ICON.x}</button></li>`).join('')}</ul>`;
     const why= s.error?`<p class="warn" style="margin:0">${esc(s.error)} Choose a project yourself.</p>`
       : t?`<p class="fd-why">${esc(t.reason)}${t.by==='jev'?'<span class="triage-by" title="Jev made this call">Jev</span>':''}</p>`
       : `<p class="fd-why">Work Desk suggests <b>${esc(pName(s.project))}</b>.${s.warning?` ${esc(s.warning)}`:''}</p>`;
     d.innerHTML=`<form class="td-body" id="fd-form">
       <div class="td-head"><h3 class="sec-h">Where does this go?</h3><button type="button" class="icon-btn close" data-fdcancel aria-label="Cancel">${ICON.x}</button></div>
       ${why}
-      <textarea id="fd-text" class="td-title" rows="2" aria-label="Task">${esc(s.text||note)}</textarea>
-      ${(s.text||note)!==note?`<details class="fd-orig"><summary>Your note as typed</summary><p>${esc(note)}</p></details>`:''}
+      ${dup}
+      ${fields}
+      ${tasks.length>1||tasks[0].text!==note?`<details class="fd-orig"><summary>Your note as typed</summary><p>${esc(note)}</p></details>`:''}
       <div class="ed-grid td-fields">
         <div class="field"><label for="fd-proj">Project</label><select id="fd-proj"><option value="inbox">Inbox</option>${ordered().map(p=>`<option value="${esc(p.id)}" ${p.id===s.project?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
-        <div class="field"><label for="fd-due">Due</label><input type="date" id="fd-due" value="${esc(s.due||'')}"></div>
+        ${tasks.length===1?`<div class="field"><label for="fd-due">Due</label><input type="date" id="fd-due" value="${esc(tasks[0].due||'')}"></div>`:''}
       </div>
       ${t?.suggest?`<div><button type="button" class="mini" data-fdnew>New project: “${esc(t.suggest)}”</button></div>`:''}
-      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-fdcancel>Cancel</button><button type="submit" class="btn" id="fd-go">${esc(goLabel(s.project))}</button></div>
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-fdcancel>Cancel</button><button type="submit" class="btn" id="fd-go">${esc(goLabel(s.project, tasks.length))}</button></div>
     </form>`;
     d.showModal(); setTimeout(()=>$('fd-go')?.focus(),0);
     return new Promise(res=>{ fdResolve=res; });
   }
   function finishFiling(extra){
+    const d=$('file-dlg'), rows=[...d.querySelectorAll('.fd-task')];
+    const tasks=rows.length
+      ? rows.map(r=>({text:r.querySelector('textarea').value.trim(), due:r.querySelector('input').value||null})).filter(t=>t.text)
+      : [{text:$('fd-text').value.trim()||fdNote, due:$('fd-due').value||null}];
+    if(!tasks.length) return;
     const res=fdResolve; fdResolve=null;
-    const text=$('fd-text').value.trim()||fdNote;
-    $('file-dlg').close();
-    res?.({text, project:$('fd-proj').value, due:$('fd-due').value||null, ...extra});
+    const project=$('fd-proj').value;
+    d.close();
+    res?.({tasks, project, ...extra});
   }
   // Start the project an Inbox note suggested, moving every note that suggested the same name.
-  function startProjectFor(name, id){
+  function startProjectFor(name, newIds){
     if(view!=='desk') setView('desk');
     const key=name.toLowerCase();
     const ids=items.filter(i=>i.project==='inbox' && i.status!=='done' && (i.triage?.suggest||'').toLowerCase()===key).map(i=>i.id);
-    if(!ids.includes(id)) ids.push(id);
+    for(const id of newIds) if(!ids.includes(id)) ids.push(id);
     newProjectFrom(name, ids);
   }
   const fdlg=$('file-dlg');
   fdlg.addEventListener('submit', e=>{ e.preventDefault(); finishFiling({}); });
   fdlg.addEventListener('click', e=>{
     if(e.target===fdlg || e.target.closest('[data-fdcancel]')){ fdlg.close(); return; }
-    if(e.target.closest('[data-fdnew]')){ $('fd-proj').value='inbox'; finishFiling({newProject:fdSug.triage.suggest}); }
+    if(e.target.closest('[data-fdnew]')){ $('fd-proj').value='inbox'; finishFiling({newProject:fdSug.triage.suggest}); return; }
+    const rm=e.target.closest('[data-fdrm]');
+    if(rm && fdCount()>1){ rm.closest('.fd-task').remove(); $('fd-go').textContent=goLabel($('fd-proj').value, fdCount()); }
   });
-  fdlg.addEventListener('change', e=>{ if(e.target.id==='fd-proj') $('fd-go').textContent=goLabel(e.target.value); });
+  fdlg.addEventListener('change', e=>{ if(e.target.id==='fd-proj') $('fd-go').textContent=goLabel(e.target.value, fdCount()); });
   fdlg.addEventListener('keydown', e=>{ if(e.target.id==='fd-text' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); fdlg.querySelector('form').requestSubmit(); } });
   fdlg.addEventListener('close', ()=>{ if(fdResolve){ const res=fdResolve; fdResolve=null; res(null); } });
 
@@ -304,6 +341,7 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     if(v.watch?.length) h+=`<p class="label">Watch out</p><ul class="brief-list">${li(v.watch)}</ul>`;
     if(v.quick_wins?.length) h+=`<p class="label">Quick wins</p><ul class="brief-list">${li(v.quick_wins)}</ul>`;
     if(v.first_step) h+=`<p class="brief-start"><b>Start here:</b> ${esc(v.first_step)}</p>`;
+    if(v.note) h+=`<p class="brief-meta">${esc(v.note)}</p>`;
     if(when) h+=`<p class="brief-meta">Brief from ${esc(when)}</p>`;
     $('brief-out').innerHTML=h||'<p class="empty">The brief came back empty. Try again.</p>';
   }

@@ -31,6 +31,9 @@ pub struct Config {
     /// Where new project folders are created.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projects_root: Option<String>,
+    /// Hours of project work in a typical day, for planning against deadlines.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hours_per_day: Option<f64>,
     /// The Mac app that "Open in editor" uses.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
@@ -168,6 +171,10 @@ impl Config {
     /// The Jev key, if any. `TYPESAFE_API_KEY` wins over the saved key.
     pub fn jev_key(&self) -> Option<String> {
         env("TYPESAFE_API_KEY").or_else(|| clean(&self.jev_key))
+    }
+
+    pub fn hours_per_day(&self) -> f64 {
+        self.hours_per_day.filter(|h| *h > 0.0 && *h <= 24.0).unwrap_or(4.0)
     }
 
     pub fn editor(&self) -> String {

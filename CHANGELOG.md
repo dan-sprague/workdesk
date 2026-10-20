@@ -13,6 +13,11 @@ Releases are tagged `vX.Y.Z` on `main`.
   a suggested new project and the closest existing one, with buttons to create the project or file it
   anyway. With a Jev key, Jev's calibrated pick makes the project call.
 - Notes sent to a project you chose yourself are tidied into a task too, with the date caught.
+- **Jev in every structured decision.** With a TypeSafe key, Jev decides the project and whether a
+  note fits any, spots notes that hold several to-dos (which become separate tasks) or repeat an open
+  task, sizes every open task and judges whether it's waiting, vague or critical, and reads tasks before
+  prompts are drafted. Work Desk plans the day from those judgments against your hours
+  (`desk hours`), and the chat model writes with them in front of it.
 - **Project work folders.** New projects get `~/Documents/Projects/Repos/<name>` with a standard
   research layout, set up as a git repo with a first commit. `desk new`.
 - **Prompts for Claude.** Draft, edit and copy a Claude Code prompt from any task; open the project

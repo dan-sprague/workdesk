@@ -167,7 +167,7 @@ pub fn project_facts(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> Value 
 }
 
 /// A linked path as Claude Code will see it from the project folder.
-fn from_folder(path: &str, folder: Option<&str>) -> String {
+pub fn from_folder(path: &str, folder: Option<&str>) -> String {
     if let Some(f) = folder.map(|f| f.trim_end_matches('/')) {
         if path == f {
             return ".".into();
@@ -179,7 +179,7 @@ fn from_folder(path: &str, folder: Option<&str>) -> String {
     path.to_string()
 }
 
-fn file_paths(m: &Map<String, Value>) -> Vec<&str> {
+pub fn file_paths(m: &Map<String, Value>) -> Vec<&str> {
     m.get("files").and_then(Value::as_array).map(|a| a.iter().filter_map(|f| f["path"].as_str()).collect()).unwrap_or_default()
 }
 
@@ -269,11 +269,175 @@ pub fn prompt_context(id: &str, item: &Map<String, Value>, projects: &[Doc], ite
     out
 }
 
+/// One of Jev's judgments kept on a task (see jev.rs): hours, waiting, vague, matters, effort.
+fn judged(m: &Map<String, Value>, k: &str) -> Option<f64> {
+    m.get("jev")?.get(k)?.as_f64()
+}
+
+/// Bars for flagging a task from Jev's yes/no judgments.
+const WAITING_FLAG: f64 = 0.6;
+const VAGUE_FLAG: f64 = 0.6;
+/// Hours assumed for a task Jev hasn't sized yet.
+const UNSIZED_HOURS: f64 = 2.0;
+
+fn hours_label(h: f64) -> String {
+    if h < 1.0 {
+        format!("{:.0} min", (h * 60.0).max(5.0))
+    } else if h < 10.0 {
+        format!("{} h", format!("{h:.1}").trim_end_matches(".0"))
+    } else {
+        format!("{:.0} h", h)
+    }
+}
+
+/// Jev's judgments as a few words for a task line.
+fn judged_label(m: &Map<String, Value>) -> String {
+    let mut out = String::new();
+    if let Some(h) = judged(m, "hours") {
+        out.push_str(&format!(" | ~{} (Jev)", hours_label(h)));
+    }
+    if judged(m, "waiting").map_or(false, |p| p >= WAITING_FLAG) {
+        out.push_str(" | probably waiting on someone");
+    }
+    if judged(m, "vague").map_or(false, |p| p >= VAGUE_FLAG) {
+        out.push_str(" | vague");
+    }
+    if judged(m, "matters").map_or(false, |x| x >= 2.5) {
+        out.push_str(" | critical to the project goal");
+    }
+    out
+}
+
+/// 0 for Monday … 6 for Sunday (1970-01-01 was a Thursday).
+fn weekday_index(days: i64) -> i64 {
+    (days + 3).rem_euclid(7)
+}
+
+/// Working days (Monday to Friday) from today through `day`, counting today.
+fn workdays_through(today: i64, day: i64) -> i64 {
+    (today..=day).filter(|d| weekday_index(*d) < 5).count() as i64
+}
+
+/// A plan worked out in code from Jev's judgments: deadlines that don't fit the working time
+/// left, today's tasks (least room to spare first), quick wins, and what's stuck. The chat
+/// model writes the brief from it. None until Jev has sized some tasks.
+pub fn plan_text(projects: &[Doc], items: &[Doc], hours_per_day: f64) -> Option<String> {
+    let open: Vec<&Doc> = items.iter().filter(|(_, m)| is_open(m) && s(m, "project") != Some("inbox")).collect();
+    if !open.iter().any(|(_, m)| judged(m, "hours").is_some()) {
+        return None;
+    }
+    let today = today_days();
+    let hours = |m: &Map<String, Value>| judged(m, "hours").unwrap_or(UNSIZED_HOURS);
+    let stuck = |m: &Map<String, Value>| {
+        judged(m, "waiting").map_or(false, |p| p >= WAITING_FLAG) || judged(m, "vague").map_or(false, |p| p >= VAGUE_FLAG)
+    };
+    let label = |m: &Map<String, Value>| format!("{} ({})", s(m, "text").unwrap_or(""), project_name(projects, s(m, "project").unwrap_or("inbox")));
+
+    // Deadlines, soonest first: the work due by each date against the working time until then.
+    let mut dated: Vec<(&Doc, i64)> = open.iter().filter_map(|d| Some((*d, parse_date(s(&d.1, "due")?)?))).collect();
+    dated.sort_by_key(|(_, due)| *due);
+    let mut days: Vec<(i64, f64, f64)> = Vec::new(); // (due, work due by then, time available)
+    let mut cum = 0.0;
+    for (d, due) in &dated {
+        cum += hours(&d.1);
+        let avail = workdays_through(today, *due) as f64 * hours_per_day;
+        match days.last_mut() {
+            Some(last) if last.0 == *due => last.1 = cum,
+            _ => days.push((*due, cum, avail)),
+        }
+    }
+    let at_risk: Vec<String> = days
+        .iter()
+        .filter(|(due, work, avail)| *due >= today && work > avail)
+        .take(4)
+        .map(|(due, work, avail)| {
+            format!("- {}: about {} of work due by then, about {} of working time", short_date(&iso_from_days(*due)), hours_label(*work), hours_label(*avail))
+        })
+        .collect();
+    // A task's room to spare is the tightest gap at its deadline or any later one.
+    let mut room: Vec<f64> = days.iter().map(|(_, w, a)| a - w).collect();
+    for i in (0..room.len().saturating_sub(1)).rev() {
+        room[i] = room[i].min(room[i + 1]);
+    }
+    let room_of = |id: &str| {
+        let due = dated.iter().find(|(d, _)| d.0 == id)?.1;
+        days.iter().position(|(d, _, _)| *d == due).map(|i| room[i])
+    };
+
+    // Today: tight deadlines, then work already started, then other deadlines, then the rest
+    // by how much it matters. Waiting and vague tasks are listed separately instead.
+    let rank = |(id, m): &&Doc| {
+        let r = room_of(id);
+        let started = matches!(stage(m), "doing" | "review");
+        let tier = match r {
+            Some(r) if r < hours_per_day * 2.0 => 0,
+            _ if started => 1,
+            Some(_) => 2,
+            None => 3,
+        };
+        let within = r.unwrap_or(0.0) - judged(m, "matters").unwrap_or(1.0) * 100.0;
+        (tier, (within * 10.0) as i64)
+    };
+    let mut ready: Vec<&Doc> = open.iter().copied().filter(|(_, m)| !stuck(m)).collect();
+    ready.sort_by_key(|d| rank(d));
+    let mut today_list = Vec::new();
+    let mut used = 0.0;
+    for (id, m) in &ready {
+        if today_list.len() >= 6 || (used >= hours_per_day && !today_list.is_empty()) {
+            break;
+        }
+        used += hours(m).min(hours_per_day);
+        let mut line = format!("- {} · ~{}", label(m), hours_label(hours(m)));
+        if let Some(d) = s(m, "due") {
+            line.push_str(&format!(" · due {}", short_date(d)));
+            if let Some(r) = room_of(id) {
+                line.push_str(&if r < 0.0 { format!(", {} short", hours_label(-r)) } else { format!(", {} to spare", hours_label(r)) });
+            }
+        }
+        if matches!(stage(m), "doing" | "review") {
+            line.push_str(&format!(" · {}", stage_label(stage(m)).to_lowercase()));
+        }
+        today_list.push((id.clone(), line));
+    }
+    let mut quick: Vec<&Doc> = ready
+        .iter()
+        .copied()
+        .filter(|(id, m)| judged(m, "hours").map_or(false, |h| h <= 0.75) && !today_list.iter().any(|(t, _)| t == id))
+        .collect();
+    quick.sort_by(|a, b| judged(&b.1, "matters").unwrap_or(1.0).total_cmp(&judged(&a.1, "matters").unwrap_or(1.0)));
+    let waiting: Vec<String> =
+        open.iter().filter(|(_, m)| judged(m, "waiting").map_or(false, |p| p >= WAITING_FLAG)).take(5).map(|(_, m)| format!("- {}", label(m))).collect();
+    let vague: Vec<String> = open
+        .iter()
+        .filter(|(_, m)| judged(m, "vague").map_or(false, |p| p >= VAGUE_FLAG))
+        .filter(|(_, m)| s(m, "due").is_some() || stage(m) != "todo" || judged(m, "matters").map_or(false, |x| x >= 2.0))
+        .take(3)
+        .map(|(_, m)| format!("- {}", label(m)))
+        .collect();
+
+    let mut out = format!(
+        "Plan worked out by Work Desk from Jev's judgments (sizes are Jev's estimates; about {} of project work a day; unsized tasks count as {}):\n",
+        hours_label(hours_per_day),
+        hours_label(UNSIZED_HOURS)
+    );
+    let mut section = |title: &str, lines: &[String]| {
+        if !lines.is_empty() {
+            out.push_str(&format!("{title}:\n{}\n", lines.join("\n")));
+        }
+    };
+    section("At risk", &at_risk);
+    section("Today, in this order", &today_list.into_iter().map(|(_, l)| l).collect::<Vec<_>>());
+    section("Quick wins", &quick.iter().take(3).map(|(_, m)| format!("- {} · ~{}", label(m), hours_label(hours(m)))).collect::<Vec<_>>());
+    section("Waiting on someone", &waiting);
+    section("Too vague to start (decide what done looks like first)", &vague);
+    Some(out)
+}
+
 /// Full picture of open work, given to the chat model for the daily brief.
 pub fn brief_context(projects: &[Doc], items: &[Doc]) -> String {
     let today = today_days();
     let mut out = format!("Today is {} {}.\n\n", weekday_name(today), iso_from_days(today));
-    let mut push_tasks = |out: &mut String, pid: &str| {
+    let push_tasks = |out: &mut String, pid: &str| {
         let mut open: Vec<&Doc> = items.iter().filter(|(_, m)| s(m, "project") == Some(pid) && is_open(m)).collect();
         open.sort_by_key(|(_, m)| sort_key(m));
         if open.is_empty() {
@@ -292,6 +456,7 @@ pub fn brief_context(projects: &[Doc], items: &[Doc]) -> String {
             if idle > 0 {
                 line.push_str(&format!(" | untouched {idle} days"));
             }
+            line.push_str(&judged_label(m));
             out.push_str(&line);
             out.push('\n');
         }
@@ -454,4 +619,58 @@ pub fn today_report(projects: &[Doc], items: &[Doc], c: &Paint) -> String {
         out.push_str(&format!("\n{}\n", c.yellow(&format!("{inbox} note(s) waiting in the Inbox. Run `desk sort` to file them."))));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn doc(id: &str, v: Value) -> Doc {
+        (id.to_string(), v.as_object().unwrap().clone())
+    }
+
+    /// The next Monday on or after today, so the working-day count is predictable.
+    fn monday() -> i64 {
+        let t = today_days();
+        t + (7 - weekday_index(t)) % 7
+    }
+
+    #[test]
+    fn plan_needs_judgments() {
+        let projects = vec![doc("p", json!({"name": "P"}))];
+        let items = vec![doc("a", json!({"text": "A", "project": "p"}))];
+        assert!(plan_text(&projects, &items, 4.0).is_none());
+    }
+
+    #[test]
+    fn plan_flags_deadlines_that_dont_fit() {
+        let projects = vec![doc("p", json!({"name": "Paper"}))];
+        // due next Monday: 40 h of work, and at most five 4 h working days before then
+        let due = iso_from_days(monday());
+        let items = vec![
+            doc("big", json!({"text": "Write methods", "project": "p", "due": due, "jev": {"hours": 40.0, "waiting": 0.1, "vague": 0.1}})),
+            doc("quick", json!({"text": "Email Sonia", "project": "p", "jev": {"hours": 0.25, "waiting": 0.05, "vague": 0.0, "matters": 2.0}})),
+            doc("stuck", json!({"text": "Get Eric's sign-off", "project": "p", "jev": {"hours": 0.5, "waiting": 0.9, "vague": 0.1}})),
+            doc("fuzzy", json!({"text": "Think about the model", "project": "p", "stage": "doing", "jev": {"hours": 4.0, "waiting": 0.0, "vague": 0.8}})),
+        ];
+        let plan = plan_text(&projects, &items, 4.0).unwrap();
+        assert!(plan.contains("At risk:\n- "), "{plan}");
+        let today = plan.split("Today, in this order:\n").nth(1).unwrap();
+        assert!(today.starts_with("- Write methods (Paper) · ~40 h · due"), "{plan}");
+        assert!(plan.contains("Quick wins:\n- Email Sonia (Paper) · ~15 min"), "{plan}");
+        assert!(today.contains("short"), "{plan}");
+        assert!(plan.contains("Waiting on someone:\n- Get Eric's sign-off (Paper)"), "{plan}");
+        assert!(plan.contains("Too vague to start (decide what done looks like first):\n- Think about the model (Paper)"), "{plan}");
+        // stuck tasks never land in Today
+        assert!(!today.split("Quick wins:").next().unwrap().contains("Get Eric"), "{plan}");
+    }
+
+    #[test]
+    fn counts_working_days() {
+        let m = monday();
+        assert_eq!(workdays_through(m, m + 4), 5);
+        assert_eq!(workdays_through(m, m + 6), 5);
+        assert_eq!(workdays_through(m + 5, m + 6), 0);
+    }
 }

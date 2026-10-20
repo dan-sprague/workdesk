@@ -159,11 +159,25 @@ Notes waiting in the **Inbox** show the reason, and two buttons:
 
 ### Jev (optional)
 
-Add a [TypeSafe](https://typesafe.ai) key as well and Jev makes the project call. Jev doesn't write text;
-it answers two questions with probabilities: is this note about one of your projects at all, and which
-one. If either answer falls below its bar (`JEV_MIN_FIT` and `JEV_MIN_CONFIDENCE` in `src/ai.rs`, both
-0.5 to start with), the note is suggested for the Inbox. The chat model still tidies the wording, finds
-the date and suggests the new project's name. A Jev key on its own files notes but can't write the brief.
+Add a [TypeSafe](https://typesafe.ai) key as well and Jev makes every decision that can be put as a
+question with set answers. Jev doesn't write text: it answers with calibrated probabilities, code acts on
+them, and the chat model writes with Jev's answers in front of it.
+
+| When | Jev decides | What happens with it |
+|---|---|---|
+| Filing a note | Is it about one of your projects? Which one? Does it hold several to-dos? | Below 50% on either project question, it's suggested for the Inbox. Several to-dos: the chat model splits it into tasks. |
+| Filing a note | Does it repeat an open task in that project? | The confirm window warns you. |
+| The brief | For each open task: how big is it, is it waiting on someone, how much does it matter to the goal, is it too vague to start? | Work Desk adds up the work due by each deadline against your hours, picks today's tasks (least room to spare first), quick wins, and what's stuck; the chat model writes the brief from that plan. |
+| Drafting a prompt | What kind of work is it? Is it too vague? Which linked files does it need? | The prompt is shaped for that kind of work, starts by agreeing what done looks like if it's vague, and names only the files that matter. |
+
+Task judgments are kept on each task (`jev` in the data file) and only redone when the task's wording,
+notes or project change, so the first brief takes a few seconds longer and later ones don't. Task details
+show Jev's size estimate, and flag tasks that look stuck. The bars are constants in `src/jev.rs` and
+`src/logic.rs`; they're starting points, so check them against how your own tasks come out. A Jev key on
+its own files notes but can't write the brief or prompts.
+
+Set your hours under **AI keys** (or `desk hours 5`). The plan assumes 4 hours of project work on a
+weekday unless you change it.
 
 ## Prompts for Claude
 

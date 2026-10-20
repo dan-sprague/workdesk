@@ -33,8 +33,10 @@ pub const PROVIDERS: &[Provider] = &[
     Provider { id: "custom", name: "your AI service", base: "", model: "", prefer: &[] },
 ];
 
-pub const JEV_URL: &str = "https://api.typesafe.ai/v1/systemone";
-const JEV_MODELS_URL: &str = "https://api.typesafe.ai/v1/models";
+/// TypeSafe's API root. `TYPESAFE_API_BASE` points Work Desk at another one (e.g. a local stand-in for tests).
+pub fn jev_base() -> String {
+    std::env::var("TYPESAFE_API_BASE").ok().filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "https://api.typesafe.ai/v1".into())
+}
 pub const JEV_MODEL: &str = "jev-latest";
 
 /// Services a pasted key is matched against, for messages.
@@ -91,7 +93,7 @@ async fn list_models(http: &reqwest::Client, provider: &Provider, key: &str) -> 
 
 /// Whether TypeSafe accepts the key. Listing models needs the key and costs nothing.
 async fn jev_accepts(http: &reqwest::Client, key: &str) -> Result<bool> {
-    let resp = http.get(JEV_MODELS_URL).bearer_auth(key).send().await?;
+    let resp = http.get(format!("{}/models", jev_base())).bearer_auth(key).send().await?;
     match resp.status().as_u16() {
         200..=299 => Ok(true),
         401 | 403 => Ok(false),

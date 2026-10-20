@@ -102,6 +102,7 @@ async fn status(State(app): State<App>) -> Json<Value> {
         "jev": cfg.jev_key().is_some(),
         "projects_root": tilde(&cfg.projects_root()),
         "editor": cfg.editor(),
+        "hours_per_day": cfg.hours_per_day(),
         "data_file": app.store.path().display().to_string(),
         "data_error": app.store.last_error(),
         "version": env!("CARGO_PKG_VERSION"),
@@ -123,9 +124,13 @@ async fn create(State(app): State<App>, Path(coll): Path<String>, Json(body): Js
     let Value::Object(mut doc) = body else { return Err(bad("Expected a JSON object")) };
     if coll == "items" {
         let ai = app.ai();
-        let c = ai::capture(&app.store, ai.as_ref(), doc).await.map_err(|e| bad(&e.to_string()))?;
-        let mut out = with_id(&c.id, c.doc);
-        if let Some(n) = c.notice {
+        let (mut made, notice) = ai::capture(&app.store, ai.as_ref(), doc).await.map_err(|e| bad(&e.to_string()))?;
+        let first = made.remove(0);
+        let mut out = with_id(&first.id, first.doc);
+        if !made.is_empty() {
+            out["also"] = Value::Array(made.into_iter().map(|c| with_id(&c.id, c.doc)).collect());
+        }
+        if let Some(n) = notice {
             out["notice"] = json!(n);
         }
         return Ok(Json(out));
@@ -178,10 +183,10 @@ async fn suggest(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
     let f = ai.file_note(text, &projects, &items).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(json!({
         "project": f.project,
-        "text": f.text,
-        "due": f.due,
-        "triage": f.triage.map(|t| t.to_json()),
+        "tasks": f.tasks.iter().map(|t| json!({ "text": t.text, "due": t.due })).collect::<Vec<_>>(),
+        "triage": f.triage.as_ref().map(|t| t.to_json()),
         "warning": f.warning,
+        "duplicate": f.duplicate_json(),
     })))
 }
 
@@ -193,14 +198,13 @@ async fn sort_inbox(State(app): State<App>) -> ApiResult {
 
 async fn brief(State(app): State<App>) -> ApiResult {
     let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
-    let projects = app.store.list("projects")?;
-    let items = app.store.list("items")?;
-    let v = ai.brief(&projects, &items).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let hours = app.cfg.read().unwrap().hours_per_day();
+    let v = ai.brief(&app.store, hours).await.map_err(|e| ApiError(StatusCode::BAD_GATEWAY, e.to_string()))?;
     Ok(Json(v))
 }
 
 /// Paste any key: Work Desk works out which service it's for, checks it, and saves it.
-/// Also `{"forget": "jev"}` or `{"forget": "chat"}`, and `{"model": "..."}`.
+/// Also `{"forget": "jev"}` or `{"forget": "chat"}`, `{"model": "..."}` and `{"hours_per_day": 4}`.
 async fn draft_prompt(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
     let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which task?"))?;
     let ai = app.ai().ok_or_else(|| bad("Add an API key under AI keys first."))?;
@@ -241,6 +245,12 @@ async fn settings(State(app): State<App>, Json(body): Json<Value>) -> ApiResult 
     }
     if let Some(m) = body.get("model").and_then(|v| v.as_str()) {
         cfg.model = Some(m.trim().to_string()).filter(|m| !m.is_empty());
+    }
+    if let Some(h) = body.get("hours_per_day").and_then(Value::as_f64) {
+        if !(h > 0.0 && h <= 24.0) {
+            return Err(bad("Hours a day should be between 0 and 24."));
+        }
+        cfg.hours_per_day = Some(h);
     }
     cfg.save()?;
     Ok(Json(json!({ "message": message })))

@@ -14,6 +14,7 @@ mod ai;
 mod config;
 #[cfg(target_os = "macos")]
 mod desktop;
+mod jev;
 mod logic;
 mod project;
 mod provider;
@@ -107,6 +108,8 @@ enum Cmd {
     },
     /// Use a different model from the same service, e.g. `desk model deepseek-reasoner`
     Model { name: String },
+    /// How many hours of project work you have on a typical day (for planning; default 4)
+    Hours { hours: f64 },
     /// Keep your data in Google Drive (moves it to My Drive/WorkDesk/workdesk.json)
     Drive {
         /// Folder inside My Drive
@@ -268,14 +271,16 @@ async fn run(cmd: Cmd) -> Result<()> {
             doc.insert("text".into(), json!(text));
             doc.insert("project".into(), json!(pid));
             doc.insert("stage".into(), json!(stage));
-            let c = ai::capture(&store, ai.as_ref(), doc).await?;
-            let proj = logic::project_name(&projects, logic::s(&c.doc, "project").unwrap_or("inbox"));
-            let mut line = format!("{} {}  →  {}", paint.bold("Added:"), logic::s(&c.doc, "text").unwrap_or(""), paint.cyan(&proj));
-            if let Some(d) = logic::s(&c.doc, "due") {
-                line.push_str(&format!("  {}", paint.yellow(&format!("due {}", util::short_date(d)))));
+            let (made, notice) = ai::capture(&store, ai.as_ref(), doc).await?;
+            for c in &made {
+                let proj = logic::project_name(&projects, logic::s(&c.doc, "project").unwrap_or("inbox"));
+                let mut line = format!("{} {}  →  {}", paint.bold("Added:"), logic::s(&c.doc, "text").unwrap_or(""), paint.cyan(&proj));
+                if let Some(d) = logic::s(&c.doc, "due") {
+                    line.push_str(&format!("  {}", paint.yellow(&format!("due {}", util::short_date(d)))));
+                }
+                println!("{line}");
             }
-            println!("{line}");
-            if let Some(n) = c.notice {
+            if let Some(n) = notice {
                 println!("{}", paint.dim(&n));
             }
         }
@@ -324,8 +329,8 @@ async fn run(cmd: Cmd) -> Result<()> {
         Cmd::Brief => {
             let store = open_store(&cfg)?;
             let ai = need_ai(&cfg, &http)?;
-            eprintln!("{}", paint.dim("Thinking…"));
-            let v = ai.brief(&store.list("projects")?, &store.list("items")?).await?;
+            eprintln!("{}", paint.dim(if ai.jev.is_some() { "Jev is sizing up your tasks, then planning…" } else { "Thinking…" }));
+            let v = ai.brief(&store, cfg.hours_per_day()).await?;
             print_brief(&v, &paint);
         }
         Cmd::Sort => {
@@ -379,6 +384,15 @@ async fn run(cmd: Cmd) -> Result<()> {
                 Some(c) => println!("Work Desk will use {} from {}.", c.model, c.provider.name),
                 None => println!("Saved. Add a key with `desk key` to use it."),
             }
+        }
+        Cmd::Hours { hours } => {
+            if !(hours > 0.0 && hours <= 24.0) {
+                bail!("Give a number of hours between 0 and 24.");
+            }
+            let mut cfg = cfg;
+            cfg.hours_per_day = Some(hours);
+            cfg.save()?;
+            println!("Saved. The brief now plans around {hours} hours of project work a day.");
         }
         Cmd::New { name, goal, no_folder } => {
             let store = open_store(&cfg)?;
@@ -452,7 +466,11 @@ async fn run(cmd: Cmd) -> Result<()> {
                 Some(c) => println!("AI:         {} · {}", c.provider.name, c.model),
                 None => println!("AI:         no key yet (desk key <your key>)"),
             }
-            println!("Jev:        {}", if cfg.jev_key().is_some() { "on: checks which project each note fits" } else { "off" });
+            println!(
+                "Jev:        {}",
+                if cfg.jev_key().is_some() { "on: projects, duplicates, task sizes, waiting, vague, kind of work, files" } else { "off" }
+            );
+            println!("Planning:   {} hours of project work a day (desk hours <n>)", cfg.hours_per_day());
         }
     }
     Ok(())
@@ -488,5 +506,8 @@ fn print_brief(v: &Value, c: &logic::Paint) {
     }
     if let Some(s) = v["first_step"].as_str() {
         println!("{} {}\n", c.violet(&c.bold("Start here:")), s);
+    }
+    if let Some(n) = v["note"].as_str() {
+        println!("{}\n", c.dim(n));
     }
 }

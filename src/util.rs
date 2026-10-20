@@ -84,9 +84,6 @@ pub fn today_days() -> i64 {
     }
 }
 
-pub fn today_iso() -> String {
-    iso_from_days(today_days())
-}
 
 pub fn weekday_name(days: i64) -> &'static str {
     ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][(days + 4).rem_euclid(7) as usize]
