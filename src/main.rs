@@ -1,15 +1,25 @@
 //! `desk` — Work Desk on your own computer.
 //!
 //!   desk                 open the Work Desk in your browser
-//!   desk add "<note>"    file a sticky note (DeepSeek picks the project)
+//!   desk app             open it in its own window (what Work Desk.app runs)
+//!   desk add "<note>"    file a sticky note (Work Desk picks the project)
+//!   desk new "<name>"    add a project, with its own git-tracked work folder
+//!   desk prompt "<task>" draft a prompt for Claude Code about a task
 //!   desk today           what needs doing today
-//!   desk brief           a start-of-day plan from DeepSeek
+//!   desk brief           a start-of-day plan
 //!   desk sort            file everything waiting in the Inbox
-//!   desk key <KEY>       save your DeepSeek API key
+//!   desk key <KEY>       save an API key (any supported service, or Jev)
 
 mod ai;
+mod closeout;
 mod config;
+#[cfg(target_os = "macos")]
+mod desktop;
+mod jev;
 mod logic;
+mod progress;
+mod project;
+mod provider;
 mod server;
 mod store;
 mod util;
@@ -19,6 +29,7 @@ use clap::{Parser, Subcommand};
 use config::Config;
 use serde_json::{json, Map, Value};
 use std::io::IsTerminal;
+use std::path::Path;
 use std::sync::{Arc, RwLock};
 use store::Store;
 
@@ -42,7 +53,10 @@ enum Cmd {
         #[arg(long)]
         no_browser: bool,
     },
-    /// Add a sticky note; DeepSeek picks the project unless you pass --project
+    /// Open the Work Desk in its own window (this is what Work Desk.app runs)
+    #[cfg(target_os = "macos")]
+    App,
+    /// Add a sticky note; Work Desk picks the project unless you pass --project
     Add {
         /// Project id (see `desk projects`), or "inbox"
         #[arg(short, long)]
@@ -54,19 +68,60 @@ enum Cmd {
         #[arg(required = true, num_args = 1..)]
         text: Vec<String>,
     },
+    /// Draft a prompt for Claude Code about a task from what's in the project folder, print it and
+    /// copy it. If the task already has one, it's brought up to date with the folder.
+    Prompt {
+        /// The task's id, or words from it
+        #[arg(required = true, num_args = 1..)]
+        task: Vec<String>,
+        /// Write a new prompt instead of updating the one already on the task
+        #[arg(long)]
+        fresh: bool,
+    },
     /// Show what needs doing today
     Today,
-    /// Ask DeepSeek for a start-of-day plan
+    /// Get a start-of-day plan
     Brief,
     /// File every note waiting in the Inbox
     Sort,
     /// List projects and their ids
     Projects,
-    /// Save your DeepSeek API key
-    Key {
-        /// The key, starting with sk-
-        key: String,
+    /// Add a project and create its work folder (a git repo) in ~/Documents/Projects/Repos
+    New {
+        /// The project's name, e.g. "CHARM IND"
+        #[arg(required = true, num_args = 1..)]
+        name: Vec<String>,
+        /// What the project is for (helps Work Desk file notes)
+        #[arg(short, long)]
+        goal: Option<String>,
+        /// Don't create a folder
+        #[arg(long)]
+        no_folder: bool,
     },
+    /// Create the work folder for an existing project that doesn't have one yet
+    Folder {
+        /// Project id, or part of its name
+        #[arg(required = true, num_args = 1..)]
+        project: Vec<String>,
+    },
+    /// Save an API key. Work Desk works out which service it's for: DeepSeek, OpenAI,
+    /// Anthropic, Google Gemini, OpenRouter, or TypeSafe's Jev (checks which project a note fits)
+    Key {
+        /// The key
+        #[arg(required_unless_present = "forget")]
+        key: Option<String>,
+        /// Say which service instead of letting Work Desk work it out
+        /// (deepseek, openai, anthropic, gemini, openrouter, custom, jev)
+        #[arg(long)]
+        provider: Option<String>,
+        /// Remove a saved key: "chat" or "jev"
+        #[arg(long, conflicts_with = "key")]
+        forget: Option<String>,
+    },
+    /// Use a different model from the same service, e.g. `desk model deepseek-reasoner`
+    Model { name: String },
+    /// How many hours of project work you have on a typical day (for planning; default 4)
+    Hours { hours: f64 },
     /// Keep your data in Google Drive (moves it to My Drive/WorkDesk/workdesk.json)
     Drive {
         /// Folder inside My Drive
@@ -134,28 +189,73 @@ fn switch_to(mut cfg: Config, dest: std::path::PathBuf, paint: &logic::Paint) ->
 fn need_ai(cfg: &Config, http: &reqwest::Client) -> Result<ai::Ai> {
     match ai::Ai::from_config(cfg, http) {
         Some(a) => Ok(a),
-        None => bail!("No DeepSeek key yet. Run `desk key <your key>` first."),
+        None => bail!("No API key yet. Run `desk key <your key>` first."),
     }
 }
 
-#[tokio::main]
-async fn main() {
-    if let Err(e) = run().await {
+/// True when this binary is the one inside Work Desk.app (…/Work Desk.app/Contents/MacOS/).
+fn in_app_bundle() -> bool {
+    let Ok(exe) = std::env::current_exe() else { return false };
+    let mut up = exe.ancestors().skip(1).map(Path::file_name);
+    matches!(
+        (up.next().flatten(), up.next().flatten(), up.next().flatten()),
+        (Some(m), Some(c), Some(app)) if m == "MacOS" && c == "Contents" && app.to_string_lossy().ends_with(".app")
+    )
+}
+
+/// Started from Finder or the Dock there is no terminal to print to, so errors get a dialog.
+fn alert(msg: &str) {
+    let quote = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+    let script = format!("display alert {} message {} as critical", quote("Work Desk couldn't start"), quote(msg));
+    let _ = std::process::Command::new("osascript").args(["-e", &script]).status();
+}
+
+fn main() {
+    // Older macOS passes a -psn_… argument to apps opened from Finder.
+    let cli = Cli::parse_from(std::env::args_os().filter(|a| !a.to_string_lossy().starts_with("-psn_")));
+    let bundled = in_app_bundle();
+    let cmd = match cli.cmd {
+        Some(cmd) => cmd,
+        #[cfg(target_os = "macos")]
+        None if bundled => Cmd::App,
+        None => Cmd::Open { port: 7477, no_browser: false },
+    };
+    let rt = tokio::runtime::Runtime::new().expect("starting the async runtime");
+    let result = match cmd {
+        #[cfg(target_os = "macos")]
+        Cmd::App => run_app(rt),
+        cmd => rt.block_on(run(cmd)),
+    };
+    if let Err(e) = result {
         eprintln!("desk: {e:#}");
+        if bundled {
+            alert(&format!("{e:#}"));
+        }
         std::process::exit(1);
     }
 }
 
-async fn run() -> Result<()> {
-    let cli = Cli::parse();
+#[cfg(target_os = "macos")]
+fn run_app(rt: tokio::runtime::Runtime) -> Result<()> {
+    let app = rt.block_on(async {
+        let cfg = Config::load();
+        let store = Arc::new(open_store(&cfg)?);
+        anyhow::Ok(server::App { store, cfg: Arc::new(RwLock::new(cfg)), http: ai::http_client(), picker: None })
+    })?;
+    desktop::run(app, rt)
+}
+
+async fn run(cmd: Cmd) -> Result<()> {
     let paint = logic::Paint::new(std::io::stdout().is_terminal());
     let cfg = Config::load();
-    let http = ai::Ai::http_client();
+    let http = ai::http_client();
 
-    match cli.cmd.unwrap_or(Cmd::Open { port: 7477, no_browser: false }) {
+    match cmd {
+        #[cfg(target_os = "macos")]
+        Cmd::App => unreachable!("handled in main"),
         Cmd::Open { port, no_browser } => {
             let store = Arc::new(open_store(&cfg)?);
-            let app = server::App { store, cfg: Arc::new(RwLock::new(cfg)), http };
+            let app = server::App { store, cfg: Arc::new(RwLock::new(cfg)), http, picker: None };
             server::serve(app, port, !no_browser).await?;
         }
         Cmd::Add { project, stage, text } => {
@@ -183,15 +283,55 @@ async fn run() -> Result<()> {
             doc.insert("text".into(), json!(text));
             doc.insert("project".into(), json!(pid));
             doc.insert("stage".into(), json!(stage));
-            let c = ai::capture(&store, ai.as_ref(), doc).await?;
-            let proj = logic::project_name(&projects, logic::s(&c.doc, "project").unwrap_or("inbox"));
-            let mut line = format!("{} {}  →  {}", paint.bold("Added:"), logic::s(&c.doc, "text").unwrap_or(""), paint.cyan(&proj));
-            if let Some(d) = logic::s(&c.doc, "due") {
-                line.push_str(&format!("  {}", paint.yellow(&format!("due {}", util::short_date(d)))));
+            let (made, notice) = ai::capture(&store, ai.as_ref(), doc).await?;
+            for c in &made {
+                let proj = logic::project_name(&projects, logic::s(&c.doc, "project").unwrap_or("inbox"));
+                let mut line = format!("{} {}  →  {}", paint.bold("Added:"), logic::s(&c.doc, "text").unwrap_or(""), paint.cyan(&proj));
+                if let Some(d) = logic::s(&c.doc, "due") {
+                    line.push_str(&format!("  {}", paint.yellow(&format!("due {}", util::short_date(d)))));
+                }
+                println!("{line}");
             }
-            println!("{line}");
-            if let Some(n) = c.notice {
+            if let Some(n) = notice {
                 println!("{}", paint.dim(&n));
+            }
+        }
+        Cmd::Prompt { task, fresh } => {
+            let store = open_store(&cfg)?;
+            let ai = need_ai(&cfg, &http)?;
+            let q = task.join(" ");
+            let items = store.list("items")?;
+            let found: Vec<&(String, Map<String, Value>)> = match items.iter().find(|(id, _)| *id == q) {
+                Some(exact) => vec![exact],
+                None => items
+                    .iter()
+                    .filter(|(_, m)| logic::is_open(m) && logic::s(m, "text").map_or(false, |t| t.to_lowercase().contains(&q.to_lowercase())))
+                    .collect(),
+            };
+            let (id, _) = match found.as_slice() {
+                [one] => *one,
+                [] => bail!("No open task matches '{q}'."),
+                many => {
+                    for (id, m) in many.iter().take(10) {
+                        println!("  {}  {}", paint.cyan(id), logic::s(m, "text").unwrap_or(""));
+                    }
+                    bail!("{} tasks match. Use more words, or one of the ids above.", many.len());
+                }
+            };
+            eprintln!("{}", paint.dim("Reading the project folder and drafting…"));
+            let prompt = ai::draft_prompt(&store, &ai, id, &cfg.progress_dirs(), fresh).await?;
+            println!("{prompt}");
+            let copied = std::process::Command::new("pbcopy")
+                .stdin(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut c| {
+                    use std::io::Write;
+                    c.stdin.take().unwrap().write_all(prompt.as_bytes())?;
+                    c.wait()
+                })
+                .map_or(false, |s| s.success());
+            if copied {
+                eprintln!("{}", paint.dim("Copied. It's also saved on the task."));
             }
         }
         Cmd::Today => {
@@ -201,8 +341,8 @@ async fn run() -> Result<()> {
         Cmd::Brief => {
             let store = open_store(&cfg)?;
             let ai = need_ai(&cfg, &http)?;
-            eprintln!("{}", paint.dim("Asking DeepSeek…"));
-            let v = ai.brief(&store.list("projects")?, &store.list("items")?).await?;
+            eprintln!("{}", paint.dim(if ai.jev.is_some() { "Jev is sizing up your tasks, then planning…" } else { "Thinking…" }));
+            let v = ai.brief(&store, cfg.hours_per_day()).await?;
             print_brief(&v, &paint);
         }
         Cmd::Sort => {
@@ -226,11 +366,74 @@ async fn run() -> Result<()> {
                 println!("{line}");
             }
         }
-        Cmd::Key { key } => {
+        Cmd::Key { key, provider, forget } => {
             let mut cfg = cfg;
-            cfg.deepseek_key = Some(key.trim().to_string());
+            match (key, forget.as_deref()) {
+                (Some(key), _) => {
+                    eprintln!("{}", paint.dim("Checking the key…"));
+                    let (new, msg) = ai::connect(cfg, &http, &key, provider.as_deref()).await?;
+                    new.save()?;
+                    println!("{msg}");
+                }
+                (None, Some("jev")) => {
+                    cfg.jev_key = None;
+                    cfg.save()?;
+                    println!("Removed the Jev key.");
+                }
+                (None, Some("chat")) => {
+                    (cfg.api_key, cfg.provider, cfg.model, cfg.base_url) = (None, None, None, None);
+                    cfg.save()?;
+                    println!("Removed the chat model's key.");
+                }
+                _ => bail!("--forget takes \"chat\" or \"jev\""),
+            }
+        }
+        Cmd::Model { name } => {
+            let mut cfg = cfg;
+            cfg.model = Some(name.trim().to_string()).filter(|m| !m.is_empty());
             cfg.save()?;
-            println!("Saved. Notes will now be filed by DeepSeek ({}).", cfg.model());
+            match cfg.chat() {
+                Some(c) => println!("Work Desk will use {} from {}.", c.model, c.provider.name),
+                None => println!("Saved. Add a key with `desk key` to use it."),
+            }
+        }
+        Cmd::Folder { project } => {
+            let store = open_store(&cfg)?;
+            let q = project.join(" ").to_lowercase();
+            let projects = store.list("projects")?;
+            let found: Vec<&(String, Map<String, Value>)> = projects
+                .iter()
+                .filter(|(id, m)| id.to_lowercase() == q || logic::s(m, "name").map_or(false, |n| n.to_lowercase().contains(&q)))
+                .collect();
+            let (id, _) = match found.as_slice() {
+                [one] => *one,
+                [] => bail!("No project matches '{q}'. Run `desk projects` to see the ids."),
+                _ => bail!("More than one project matches '{q}'. Use its id (`desk projects`)."),
+            };
+            let c = project::add_folder(&store, &cfg, id)?;
+            println!("{}", c.notice.unwrap_or_default());
+        }
+        Cmd::Hours { hours } => {
+            if !(hours > 0.0 && hours <= 24.0) {
+                bail!("Give a number of hours between 0 and 24.");
+            }
+            let mut cfg = cfg;
+            cfg.hours_per_day = Some(hours);
+            cfg.save()?;
+            println!("Saved. The brief now plans around {hours} hours of project work a day.");
+        }
+        Cmd::New { name, goal, no_folder } => {
+            let store = open_store(&cfg)?;
+            let mut doc = Map::new();
+            doc.insert("name".into(), json!(name.join(" ")));
+            if let Some(g) = goal {
+                doc.insert("goal".into(), json!(g));
+            }
+            let c = project::create(&store, &cfg, doc, !no_folder, &[], &[])?;
+            println!("{} {}  {}", paint.bold("Added:"), logic::s(&c.doc, "name").unwrap_or(""), paint.cyan(&c.id));
+            if let Some(n) = c.notice {
+                println!("{n}");
+            }
         }
         Cmd::Export { file } => {
             let store = open_store(&cfg)?;
@@ -285,7 +488,17 @@ async fn run() -> Result<()> {
             let (p, i) = store.counts();
             println!("Data file:  {}  ({p} projects, {i} tasks)", store.path().display());
             println!("Backups:    {}", config::backup_dir().display());
-            println!("Settings:   {}  (DeepSeek key stays here, not in the data file)", config::data_dir().join("config.json").display());
+            println!("Settings:   {}  (API keys stay here, not in the data file)", config::data_dir().join("config.json").display());
+            println!("Projects:   {}  (new project folders)", config::tilde(&cfg.projects_root()));
+            match cfg.chat() {
+                Some(c) => println!("AI:         {} · {}", c.provider.name, c.model),
+                None => println!("AI:         no key yet (desk key <your key>)"),
+            }
+            println!(
+                "Jev:        {}",
+                if cfg.jev_key().is_some() { "on: projects, duplicates, task sizes, waiting, vague, kind of work, files" } else { "off" }
+            );
+            println!("Planning:   {} hours of project work a day (desk hours <n>)", cfg.hours_per_day());
         }
     }
     Ok(())
@@ -321,5 +534,8 @@ fn print_brief(v: &Value, c: &logic::Paint) {
     }
     if let Some(s) = v["first_step"].as_str() {
         println!("{} {}\n", c.violet(&c.bold("Start here:")), s);
+    }
+    if let Some(n) = v["note"].as_str() {
+        println!("{}\n", c.dim(n));
     }
 }

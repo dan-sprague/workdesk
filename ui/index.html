@@ -280,6 +280,173 @@ details.done li{text-decoration:line-through;opacity:.8}
 .field textarea{padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--fg);resize:vertical;font:inherit}
 .proj-form .field input:not([type=date]){width:100%}
 
+/* ---------- Project pages, task details, linked files (local app) ---------- */
+.plink{color:inherit;text-decoration:none}
+.plink:hover{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1.5px}
+.plink::after{content:" →";opacity:0;transition:opacity .15s}
+.plink:hover::after{opacity:.6}
+.mini svg,.fileref svg,.chip svg,.row-open svg,.icon-btn svg,.ficon svg,.fname svg{width:13px;height:13px;flex:none}
+.mini svg{vertical-align:-2px;margin-right:4px}
+.mini.pp-open{display:inline-flex;align-items:center;gap:2px;text-decoration:none;align-self:center}
+.mini.pp-open svg{margin:0}
+.linkish{border:0;background:none;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:2px;font-size:inherit}
+.icon-btn{border:0;background:transparent;color:var(--faint);width:26px;height:26px;border-radius:7px;display:grid;place-items:center;padding:0;flex:none}
+.icon-btn:hover{background:var(--late-soft);color:var(--late)}
+.icon-btn.close:hover{background:var(--accent-soft);color:var(--accent)}
+.ghost.danger{color:var(--late)}
+.ghost.danger:hover{background:var(--late-soft);color:var(--late)}
+.mini.danger{background:var(--late);border-color:var(--late);color:#fff}
+
+/* cards and rows */
+.card-txt[data-open]{cursor:pointer}
+.card-txt[data-open]:hover{color:var(--accent)}
+.fchips{display:flex;flex-wrap:wrap;gap:4px;margin-top:-3px;min-width:0}
+.fileref{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:7px;padding:2px 7px;font-size:.72rem;font-weight:600;line-height:1.3}
+.fileref span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.fileref:hover{border-color:var(--accent);color:var(--accent)}
+.chip.fcount{display:inline-flex;align-items:center;gap:3px;background:transparent;border:1px solid var(--line);color:var(--muted)}
+.row-open{border:0;background:transparent;color:var(--faint);width:24px;height:24px;border-radius:7px;display:grid;place-items:center;padding:0}
+.row-open:hover{background:var(--accent-soft);color:var(--accent)}
+.drop-target{outline:2px dashed var(--accent)!important;outline-offset:3px;border-radius:12px}
+.drop-hint{position:fixed;z-index:1000;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.78rem;font-weight:600;padding:4px 10px;border-radius:8px;box-shadow:var(--shadow-lift);max-width:320px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.toast{position:fixed;left:50%;bottom:22px;z-index:1001;transform:translate(-50%,12px);opacity:0;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.86rem;font-weight:600;padding:10px 16px;border-radius:12px;box-shadow:var(--shadow-lift);max-width:min(560px,calc(100vw - 32px));transition:opacity .2s,transform .2s}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.warn{background:var(--late);color:#fff}
+
+/* linked file lists */
+.files{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.file{display:grid;grid-template-columns:16px minmax(0,1fr) auto;gap:10px;align-items:start;padding:8px 0;border-top:1px solid var(--line)}
+.file:first-child{border-top:0}
+.ficon{color:var(--muted);padding-top:2px;display:flex}
+.fmain{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}
+.fname{border:0;background:none;padding:0;text-align:left;font:inherit;font-weight:600;font-size:.88rem;color:var(--fg);overflow-wrap:anywhere;display:inline-flex;align-items:center;gap:6px}
+.fname:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+.fpath{font-family:var(--mono);font-size:.68rem;color:var(--faint);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ftask{border:0;background:none;padding:0;text-align:left;font:inherit;font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
+.ftask:hover{color:var(--accent)}
+.file.missing .fname{color:var(--muted);text-decoration:line-through}
+.factions{display:flex;gap:2px;align-items:center}
+.flink-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.flink{display:flex;gap:6px;flex:1 1 210px;min-width:0}
+.flink input{flex:1;min-width:0;padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font-family:var(--mono);font-size:.76rem}
+.fhint{margin:0;font-size:.76rem;color:var(--faint)}
+
+/* project page */
+.pp{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pp-nav{display:flex;align-items:center;gap:14px;min-width:0}
+.pp-back{white-space:nowrap;font-weight:600;font-size:.88rem;color:var(--muted);text-decoration:none;padding:5px 2px}
+.pp-back:hover{color:var(--accent)}
+.pp-switch{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:2px;min-width:0}
+.pp-switch::-webkit-scrollbar{display:none}
+a.fchip{text-decoration:none;white-space:nowrap}
+a.fchip[aria-current="page"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+a.fchip[aria-current="page"] .n{color:var(--bg);opacity:.7}
+.pp-head{gap:10px;border-top:4px solid hsl(var(--h) 70% 55%)}
+.pp-title{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pp-title .swatch{width:14px;height:14px}
+.pp-title h2{margin:0;font-family:var(--display);font-weight:800;font-size:clamp(1.5rem,3vw,2.05rem);line-height:1.08;letter-spacing:-.025em;flex:1 1 300px;min-width:0;overflow-wrap:anywhere;text-wrap:balance}
+.pp-goal{margin:0;color:var(--muted);max-width:75ch}
+.pp-stats{display:flex;gap:8px 24px;flex-wrap:wrap}
+.pp-stat{display:flex;flex-direction:column}
+.pp-stat b{font-family:var(--display);font-weight:700;font-size:1.3rem;line-height:1.1;font-variant-numeric:tabular-nums}
+.pp-stat span{font-size:.72rem;color:var(--muted)}
+.pp-stat.late b{color:var(--late)}
+.pp-grid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+.pp-main,.pp-side{display:flex;flex-direction:column;gap:18px;min-width:0}
+.pp-text{display:flex;flex-direction:column;gap:9px;font-size:.93rem;max-width:76ch}
+.pp-text p{margin:0}
+.pp-text ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.pp-text a{color:var(--accent);overflow-wrap:anywhere}
+.pp-add{display:flex;gap:8px;flex-wrap:wrap}
+.pp-add input{flex:1 1 240px;min-width:0;padding:8px 11px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.pp-add select{padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface)}
+.pp-lanes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;align-items:start}
+.pp-lane{min-height:110px;padding:10px;border-radius:14px}
+.pp-lane .card{padding:10px 11px 9px}
+.pp-notes{width:100%;min-height:150px;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:color-mix(in srgb,var(--note) 22%,var(--surface));color:var(--fg);resize:vertical;font:inherit;font-size:.92rem;line-height:1.5}
+.pp-notes:focus{outline:none;border-color:var(--accent)}
+.pp-dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px 14px;margin:0;font-size:.88rem}
+.pp-dl dt{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding-top:3px}
+.pp-dl dd{margin:0;min-width:0;overflow-wrap:anywhere;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+.pp-folder{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pp-due{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.pp-due:first-child{border-top:0;padding-top:2px}
+.pp-due .ftask{font-size:.86rem;color:var(--fg)}
+.pp-files .files+.flink-row,.pp-files .empty+.flink-row{margin-top:4px}
+@media (max-width:900px){.pp-lanes{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:980px){.pp-grid{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.pp-lanes{grid-template-columns:minmax(0,1fr)}.pp-nav{flex-direction:column;align-items:flex-start;gap:6px}.pp-switch{max-width:100%}}
+
+/* task details dialog */
+.tdlg{width:min(700px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--line);border-radius:18px;background:var(--surface);color:var(--fg);box-shadow:var(--shadow-lift);overflow:auto}
+.tdlg::backdrop{background:rgba(19,20,28,.4)}
+.td-body{padding:16px 20px 18px;display:flex;flex-direction:column;gap:14px}
+.td-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.td-title{width:100%;border:0;border-bottom:1.5px solid transparent;background:transparent;color:var(--fg);font-family:var(--display);font-weight:700;font-size:1.22rem;line-height:1.3;letter-spacing:-.01em;resize:none;padding:2px 0 4px}
+.td-title:focus{outline:none;border-bottom-color:var(--accent)}
+.td-fields .field{flex:1 1 130px}
+.td-fields .field select,.td-fields .field input{width:100%;height:38px}
+.tdlg .field textarea{width:100%;min-height:84px}
+.td-files{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.td-files .sec-h{font-size:1rem}
+.td-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.td-foot a.mini{text-decoration:none}
+.td-spacer{flex:1}
+.td-prompt{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.td-prompt .sec-h{font-size:1rem}
+.tdlg .td-prompt textarea{width:100%;min-height:220px;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:.8rem;line-height:1.5;resize:vertical}
+.td-prompt .mini svg{width:13px;height:13px;vertical-align:-2px;margin-right:4px}
+.td-prompt .meta{display:flex;align-items:center;gap:10px}
+.pp-stale{margin:0;padding:8px 10px;border-radius:10px;background:var(--accent-soft);font-size:.85rem}
+.confetti{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:1000} /* under the toast */
+.done-btn{display:inline-flex;align-items:center;gap:7px;padding-inline:18px;font-weight:700;transition:transform .12s cubic-bezier(.3,1.6,.5,1),box-shadow .2s}
+.done-btn svg{width:16px;height:16px}
+.done-btn:hover{transform:translateY(-1px);box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 35%,transparent)}
+.done-btn:active,.done-btn.pressed{transform:scale(.92)}
+.pp-warn{margin:0;padding:8px 12px;border-radius:10px;background:var(--soon-soft);color:var(--soon);font-size:.9rem;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pp-deliv{margin:0;font-size:.95rem}
+.pp-deliv .label{margin-right:6px}
+.fd-task.pl-m{grid-template-columns:20px minmax(0,1fr) 150px;align-items:center}
+.fd-task.pl-m input[type=checkbox]{width:18px;height:18px}
+@media (max-width:520px){.fd-task.pl-m{grid-template-columns:20px minmax(0,1fr)}.fd-task.pl-m input[type=date]{grid-column:2}}
+.chip.nodeliv{cursor:pointer}
+.pl-dup{grid-column:2/-1;font-size:.8rem;color:var(--muted);margin-top:-4px}
+.pp-closed{margin:0;padding:10px 14px;border-radius:12px;background:var(--accent-soft);display:flex;flex-direction:column;gap:6px}
+.pp-closed p{margin:0;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.pp-closed summary{cursor:pointer;font-weight:600;font-size:.9rem}
+.cl-ends{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.cl-ends li{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,220px);gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line)}
+.cl-ends select{width:100%;height:34px}
+.cl-text{font-size:.9rem}
+@media (max-width:520px){.cl-ends li{grid-template-columns:1fr}}
+.row-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);margin:7px auto 0;opacity:.6}
+.row button.row-txt{border:0;background:none;padding:0;font:inherit;color:inherit;text-align:left}
+.row button.row-txt:hover>span:first-child{text-decoration:underline;text-decoration-color:var(--faint);text-underline-offset:3px}
+.pf-check{display:flex;gap:8px;align-items:center;font-size:.88rem;color:var(--muted)}
+.pf-check code{font-family:var(--mono);font-size:.8rem}
+.key-block{display:flex;flex-direction:column;gap:6px;padding-top:10px;border-top:1px solid var(--line)}
+.key-block .label{margin:0}
+.key-block .alert-detail{margin:0}
+.key-now{margin:0;font-size:.88rem}
+.setup>.alert-detail{margin:0}
+.keys-btn{white-space:nowrap}
+.hours-row{align-items:center;font-size:.88rem;color:var(--muted)}
+.hours-row input{flex:0 0 80px!important;font-family:inherit!important}
+.triage{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;margin-top:-4px}
+.triage-why{margin:0;font-size:.82rem;color:var(--muted)}
+.triage-by{font-family:var(--mono);font-size:.66rem;color:var(--faint);border:1px solid var(--line);border-radius:6px;padding:0 5px;margin-left:4px}
+.triage-acts{display:flex;flex-wrap:wrap;gap:6px}
+.fdlg{width:min(560px,calc(100vw - 32px))}
+.fd-why{margin:0;font-size:.92rem;color:var(--muted)}
+.fd-why b{color:var(--fg)}
+.fd-orig summary{cursor:pointer;color:var(--muted);font-size:.85rem}
+.fd-orig p{margin:6px 0 0;font-size:.85rem;color:var(--muted);white-space:pre-wrap}
+.fd-tasks{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.fd-task{display:grid;grid-template-columns:minmax(0,1fr) 150px 28px;gap:8px;align-items:start}
+.fd-task textarea{width:100%;padding:7px 10px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--fg);font:inherit;resize:vertical}
+.fd-task input{height:36px;width:100%}
+@media (max-width:520px){.fd-task{grid-template-columns:minmax(0,1fr) 28px}.fd-task input{grid-column:1}}
+
 
 /* ---------- Responsive ---------- */
 @media (max-width:1060px){.board{grid-template-columns:repeat(2,minmax(0,1fr))}}
@@ -308,6 +475,7 @@ details.done li{text-decoration:line-through;opacity:.8}
     </div>
     <div class="top-right">
       <div class="stats" id="stats" aria-live="polite"></div>
+      <button class="mini keys-btn" type="button" data-ai-open title="API keys for the chat model and Jev">AI keys</button>
       <div class="toggle" role="group" aria-label="View">
         <button id="view-desk" aria-pressed="true">Desk</button>
         <button id="view-board" aria-pressed="false">Board</button>
@@ -320,17 +488,26 @@ details.done li{text-decoration:line-through;opacity:.8}
   <div id="desk-view" class="desk">
     <div class="desk-main">
       <section class="panel setup" id="ai-setup" hidden aria-labelledby="k-h">
-        <div class="panel-head"><h2 class="sec-h" id="k-h">Connect DeepSeek</h2></div>
-        <p class="alert-detail" style="margin:0">Paste your DeepSeek API key to have sticky notes filed automatically and to get a daily brief. The key is stored only on this computer.</p>
-        <form id="key-form" class="note-row">
-          <input type="password" id="ai-key" placeholder="sk-…" autocomplete="off" aria-label="DeepSeek API key">
-          <button class="btn" type="submit">Save key</button>
-        </form>
+        <div class="panel-head"><h2 class="sec-h" id="k-h">AI keys</h2><button class="mini" id="ai-close" type="button" hidden>Done</button></div>
+        <div class="key-block">
+          <p class="label">Chat model</p>
+          <p class="alert-detail">Writes your tasks, the daily brief and prompts for Claude. Paste a key from DeepSeek, OpenAI, Anthropic, Google Gemini or OpenRouter; Work Desk works out which.</p>
+          <p class="key-now" id="chat-now"></p>
+          <form class="note-row key-form" data-kind="chat"><input type="password" id="ai-key" placeholder="Paste a chat model API key" autocomplete="off" aria-label="Chat model API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <div class="key-block">
+          <p class="label">Jev (TypeSafe)</p>
+          <p class="alert-detail">Optional. Makes the structured calls: which project a note belongs to, repeats, task sizes for the brief, and how far along work is. Get a key at console.typesafe.ai.</p>
+          <p class="key-now" id="jev-now"></p>
+          <form class="note-row key-form" data-kind="jev"><input type="password" id="jev-key" placeholder="Paste your TypeSafe key" autocomplete="off" aria-label="Jev (TypeSafe) API key"><button class="btn" type="submit">Save</button></form>
+        </div>
+        <p class="alert-detail">Keys stay on this computer.</p>
+        <form id="hours-form" class="note-row hours-row"><label for="hours-in">Hours of project work on a typical day</label><input type="number" id="hours-in" min="0.5" max="24" step="0.5"><button class="mini" type="submit">Save</button></form>
         <p class="status" id="key-status" role="status"></p>
       </section>
       <section class="panel" aria-labelledby="br-h">
         <div class="panel-head"><h2 class="sec-h" id="br-h">Start of day</h2><button class="mini primary" id="brief-btn" type="button">Brief me</button></div>
-        <div id="brief-out"><p class="empty">Ask DeepSeek what to focus on today.</p></div>
+        <div id="brief-out"><p class="empty">Ask Work Desk what to focus on today.</p></div>
       </section>
       <section class="panel attention" id="attn-panel" aria-labelledby="a-h">
         <div class="panel-head"><h2 class="sec-h" id="a-h">Needs attention</h2><p class="label" id="attn-count"></p></div>
@@ -355,7 +532,7 @@ details.done li{text-decoration:line-through;opacity:.8}
             <button class="btn" type="submit" id="cap-btn">Add</button>
           </div>
         </form>
-        <p class="hint">“Sort it for me” lets DeepSeek pick the project and catch dates like “by Friday”. If it can’t tell, the note waits in the Inbox.</p>
+        <p class="hint">“Sort it for me” lets Work Desk pick the project and catch dates like “by Friday”. If no project clearly fits, the note waits in the Inbox with a suggestion.</p>
         <p class="status" id="cap-status" role="status"></p>
       </section>
       <section aria-labelledby="p-h" style="display:flex;flex-direction:column;gap:12px">
@@ -379,6 +556,15 @@ details.done li{text-decoration:line-through;opacity:.8}
     <div class="board" id="board"></div>
     <p class="board-hint">Drag cards between lanes, or hover a card and use ‹ ›. Dropping a card in Done checks it off.</p>
   </div>
+
+  <!-- PROJECT PAGE -->
+  <div id="proj-view" hidden></div>
+  <dialog id="task-dlg" class="tdlg" aria-label="Task details"></dialog>
+  <dialog id="file-dlg" class="tdlg fdlg" aria-label="Where does this note go?"></dialog>
+  <dialog id="plan-dlg" class="tdlg fdlg" aria-label="Project framework"></dialog>
+  <dialog id="close-dlg" class="tdlg" aria-label="Close out a project"></dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="drop-hint" id="drop-hint" hidden></div>
 
   <!-- TIMELINE VIEW -->
   <div id="tl-view" hidden style="display:flex;flex-direction:column;gap:16px">
@@ -435,8 +621,739 @@ details.done li{text-decoration:line-through;opacity:.8}
   let selected=null, confirmPlan=null, currentAlerts=[];
   const saveFilter=()=>{ try{localStorage.setItem('wd-filter',filter);}catch(_){} };
 
+  // ================= Project pages, task details, linked files =================
+  // Local app only: build_ui.py inserts this into the claude.ai page's script.
+  // Tasks and projects keep `files: [{path, name, kind}]` (kind: file, folder or link);
+  // projects also have `summary`, `notes` and one `folder`.
+  const ICON={
+    file:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5L12.5 5v9.5h-8.5z M9 1.5V5h3.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+    folder:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 3h4.6l1.6 1.7h6.8v8.8h-13z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>',
+    link:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.6 9.4l2.8-2.8M7.2 4.6l1.1-1.1a2.6 2.6 0 013.7 3.7l-1.1 1.1M8.8 11.4l-1.1 1.1a2.6 2.6 0 01-3.7-3.7l1.1-1.1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+    clip:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.6 4.6L5.9 9.3a1.4 1.4 0 002 2l5-5a2.8 2.8 0 00-4-4l-5 5a4.2 4.2 0 006 6l4-4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
+    open:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    x:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    check:'<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 8.6l3 3 6.6-7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  };
+  const VIEW_NAMES={desk:'Desk',board:'Board',tl:'Timeline'};
+  let pageId=null, pageEdit=false, pageDraft={}, pageAdd='', pageAddStage='todo', doneShown=6, lastView='desk';
+  let dlgId=null, dlgDelete=false, notesTimer=null, cardTags=null, promptBusy=null, promptMode='';
+  const promptStale=new Map(); // task id -> what changed in the project folder since its prompt was drafted
+  const fstat=new Map(); // path -> what /api/stat said about it on this computer
+  let projectKinds=[];   // [{id, label, folders}] from /api/status
+
+  const filesOf=x=>Array.isArray(x?.files)?x.files.filter(f=>f&&f.path):[];
+  const isLink=p=>/^https?:\/\//.test(p||'');
+  const baseName=p=>isLink(p)?p.replace(/^https?:\/\//,'').replace(/\/$/,''):(p.replace(/\/+$/,'').split('/').pop()||p);
+  const dirName=p=>{ if(isLink(p)) return ''; const q=p.replace(/\/+$/,''), i=q.lastIndexOf('/'); return i>0?q.slice(0,i):''; };
+  const fileLabel=f=>f.name||baseName(f.path);
+  const kindIcon=f=>ICON[f.kind==='folder'?'folder':(f.kind==='link'||isLink(f.path))?'link':'file'];
+  const short=(s,n=70)=>{ s=String(s||''); return s.length>n?s.slice(0,n-1)+'…':s; };
+  const itemOf=id=>items.find(i=>i.id===id);
+  const pageHref=id=>'#/p/'+encodeURIComponent(id);
+  function docOf(target){ const [coll,id]=target.split(/:(.*)/s); return {coll,id,doc:coll==='items'?itemOf(id):projOf(id)}; }
+
+  function toast(msg, warn){
+    const t=$('toast'); t.textContent=msg; t.classList.toggle('warn',!!warn); t.classList.add('show');
+    clearTimeout(toast.timer); toast.timer=setTimeout(()=>t.classList.remove('show'), warn?6500:3800);
+  }
+
+  // Re-rendering replaces the DOM; keep whatever the person is typing in.
+  function keepFocus(root, paint){
+    const a=document.activeElement;
+    const typing=n=>n.tagName==='TEXTAREA'||(n.tagName==='INPUT'&&!['date','checkbox','button','submit'].includes(n.type));
+    const st=a && a!==document.body && root.contains(a) && a.id ? {id:a.id, v:a.value, s:a.selectionStart, e:a.selectionEnd, top:a.scrollTop, typing:typing(a)} : null;
+    paint();
+    if(!st) return;
+    const n=document.getElementById(st.id); if(!n) return;
+    if(st.typing && typing(n)) n.value=st.v;
+    n.focus({preventScroll:true});
+    try{ if(st.typing && st.s!=null) n.setSelectionRange(st.s, st.e); }catch(_){}
+    if(st.top) n.scrollTop=st.top;
+  }
+
+  // ---- linked files ----
+  function fileChips(it){
+    const fs=filesOf(it); if(!fs.length) return '';
+    return `<div class="fchips">${fs.slice(0,2).map(f=>`<button type="button" class="fileref" data-fopen="${esc(f.path)}" title="Open ${esc(f.path)}">${kindIcon(f)}<span>${esc(fileLabel(f))}</span></button>`).join('')}${fs.length>2?`<button type="button" class="fileref more" data-open="${esc(it.id)}" title="All linked files">+${fs.length-2}</button>`:''}</div>`;
+  }
+  function fileCount(it){ const n=filesOf(it).length; return n?`<span class="chip fcount" title="${n} linked file${n>1?'s':''}">${ICON.clip}${n}</span>`:''; }
+
+  function fileRow(f, target, opt={}){
+    const st=fstat.get(f.path), missing=st && st.exists===false;
+    return `<li class="file ${missing?'missing':''}">
+      <span class="ficon">${kindIcon(f)}</span>
+      <div class="fmain">
+        <button type="button" class="fname" data-fopen="${esc(f.path)}" title="Open ${esc(f.path)}">${esc(fileLabel(f))}</button>
+        <span class="fpath" title="${esc(f.path)}">${esc(isLink(f.path)?f.path:dirName(f.path))}</span>
+        ${opt.task?`<button type="button" class="ftask" data-open="${esc(opt.task.id)}">${esc(short(opt.task.text,64))}</button>`:''}
+        ${missing?'<span class="chip late">not on this Mac</span>':''}
+      </div>
+      <span class="factions">
+        ${!isLink(f.path)?`<button type="button" class="mini" data-freveal="${esc(f.path)}" title="Show in Finder">Show</button>`:''}
+        ${opt.removable===false?'':`<button type="button" class="icon-btn" data-funlink="${esc(target)}" data-path="${esc(f.path)}" aria-label="Unlink ${esc(fileLabel(f))}" title="Unlink (the file itself stays where it is)">${ICON.x}</button>`}
+      </span>
+    </li>`;
+  }
+  function linkControls(target){
+    return `<div class="flink-row">
+      <button type="button" class="mini" data-fpick="${esc(target)}">${ICON.file}Link files…</button>
+      <button type="button" class="mini" data-fpick="${esc(target)}" data-folder="1">${ICON.folder}Link folder…</button>
+      <form class="flink" data-target="${esc(target)}"><input id="fl-${esc(target)}" name="p" placeholder="or paste a path or link" aria-label="Path or link to add" autocomplete="off" spellcheck="false"><button class="mini" type="submit">Add</button></form>
+    </div>${window.__deskApp?'<p class="fhint">You can also drag files from Finder onto a task or onto this list.</p>':''}`;
+  }
+
+  async function ensureStats(paths){
+    const need=[...new Set(paths)].filter(p=>p && !isLink(p) && !fstat.has(p));
+    if(!need.length || !db) return;
+    need.forEach(p=>fstat.set(p,{pending:true}));
+    let r;
+    try{ r=await db.call('POST','/api/stat',{paths:need}); }catch(_){ need.forEach(p=>fstat.delete(p)); return; }
+    r.forEach((s,k)=>{ fstat.set(need[k],s); fstat.set(s.path,s); });
+    if(r.some(s=>!s.exists)){ if(view==='proj') renderPage(); refreshTaskDlg(); }
+  }
+
+  async function linkFiles(target, raw){
+    const {coll,id,doc}=docOf(target); if(!doc||!raw.length) return;
+    let st;
+    try{ st=await db.call('POST','/api/stat',{paths:raw}); }catch(err){ toast('Could not check those files: '+err.message, true); return; }
+    st.forEach(s=>fstat.set(s.path,s));
+    const ok=st.filter(s=>s.link||(s.exists&&s.absolute)), notFound=st.filter(s=>!ok.includes(s));
+    const have=new Set(filesOf(doc).map(f=>f.path)), add=[];
+    for(const s of ok){ if(have.has(s.path)) continue; have.add(s.path); add.push({path:s.path, name:s.name, kind:s.link?'link':s.dir?'folder':'file', added:new Date().toISOString()}); }
+    try{ if(add.length) await db.doc(`${coll}/${id}`).update({files:[...filesOf(doc),...add]}); }
+    catch(err){ toast('Could not link: '+err.message, true); return; }
+    const who=coll==='items'?`“${short(doc.text,48)}”`:doc.name;
+    if(notFound.length) toast(`Couldn't find ${notFound.map(s=>s.input).join(', ')} on this computer.${add.length?` Linked the other${add.length>1?'s':''}.`:''}`, true);
+    else if(add.length) toast(`Linked ${add.length===1?add[0].name:add.length+' items'} to ${who}.`);
+    else toast(`Already linked to ${who}.`);
+  }
+  async function unlinkFile(target, path){
+    const {coll,id,doc}=docOf(target); if(!doc) return;
+    try{ await db.doc(`${coll}/${id}`).update({files:filesOf(doc).filter(f=>f.path!==path)}); }
+    catch(err){ toast('Could not unlink: '+err.message, true); }
+  }
+  async function openFile(path, reveal){
+    try{ await db.call('POST','/api/open',{path, reveal:!!reveal}); }
+    catch(err){ toast(err.message, true); if(/isn't on this computer/.test(err.message)){ fstat.set(path,{exists:false}); if(view==='proj') renderPage(); refreshTaskDlg(); } }
+  }
+  function startDir(target){
+    const {coll,doc}=docOf(target), p=coll==='projects'?doc:projOf(doc?.project);
+    const first=filesOf(doc).find(f=>!isLink(f.path));
+    return first?(first.kind==='folder'?first.path:dirName(first.path)):(p?.folder||'');
+  }
+  async function pickAndLink(target, folder){
+    try{ const r=await db.call('POST','/api/pick',{folder, start:startDir(target)}); if(r.paths?.length) await linkFiles(target, r.paths); }
+    catch(err){ toast('Could not open the file chooser: '+err.message, true); }
+  }
+
+  // ---- files dragged in from Finder (desktop app) ----
+  let dropEl=null;
+  function dropTargetAt(x,y){
+    if($('task-dlg').open && dlgId) return {el:$('task-dlg').querySelector('.td-files'), target:'items:'+dlgId};
+    const t=document.elementFromPoint(x,y)?.closest?.('[data-drop]');
+    if(!t) return null;
+    // Anywhere else on a project page links to the project; show that on its Files panel.
+    const el=t.classList.contains('pp')?(t.querySelector('.pp-files')||t):t;
+    return {el, target:t.dataset.drop};
+  }
+  function dropLabel(target){ const {coll,doc}=docOf(target); return !doc?'':coll==='items'?`Link to “${short(doc.text,40)}”`:`Link to ${doc.name}`; }
+  window.__deskDrop={
+    over(x,y){
+      const t=dropTargetAt(x,y), el=t?.el||null;
+      if(el!==dropEl){ dropEl?.classList.remove('drop-target'); el?.classList.add('drop-target'); dropEl=el; }
+      const h=$('drop-hint'); h.hidden=!t;
+      if(t){ h.textContent=dropLabel(t.target); h.style.left=Math.min(x+16, innerWidth-h.offsetWidth-8)+'px'; h.style.top=(y+18)+'px'; }
+    },
+    leave(){ dropEl?.classList.remove('drop-target'); dropEl=null; $('drop-hint').hidden=true; },
+    drop(paths,x,y){
+      const t=dropTargetAt(x,y); this.leave();
+      if(!t){ toast('Drop files on a task, or anywhere on a project page, to link them.'); return; }
+      linkFiles(t.target, paths);
+    },
+  };
+
+  // ---- simple text formatting for overviews: paragraphs, "- " bullets, **bold**, links ----
+  function fmtText(s){
+    const inline=t=>esc(t).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/(https?:\/\/[^\s<]+[^\s<.,;:)])/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+    const bullet=l=>/^\s*[-•*]\s+/.test(l);
+    return String(s||'').trim().split(/\n\s*\n/).map(block=>{
+      // A block can mix a lead-in line with the bullets under it.
+      let out='', run=[], runBullets=false;
+      const flush=()=>{
+        if(!run.length) return;
+        out += runBullets ? `<ul>${run.map(l=>`<li>${inline(l.replace(/^\s*[-•*]\s+/,''))}</li>`).join('')}</ul>`
+                          : `<p>${run.map(inline).join('<br>')}</p>`;
+        run=[];
+      };
+      for(const line of block.split('\n')){
+        if(bullet(line)!==runBullets){ flush(); runBullets=bullet(line); }
+        run.push(line);
+      }
+      flush();
+      return out;
+    }).join('');
+  }
+
+  // ---- routing: #/p/<project id> opens that project's page ----
+  function route(){
+    const m=location.hash.match(/^#\/p\/(.+)$/);
+    if(m){
+      const id=decodeURIComponent(m[1]);
+      if(id!==pageId){ pageEdit=false; pageDraft={}; pageAdd=''; doneShown=6; fstat.clear(); }
+      pageId=id; setView('proj'); window.scrollTo(0,0);
+    } else if(view==='proj') setView(lastView);
+  }
+  window.addEventListener('hashchange', route);
+  function boardPageLink(){ return filter!=='all' && projOf(filter) ? `<a class="mini pp-open" href="${pageHref(filter)}">Open project page ${ICON.open}</a>` : ''; }
+
+  // ---- project page ----
+  function renderPage(){
+    const el=$('proj-view');
+    if(!projects.length){ el.innerHTML='<p class="empty">Loading…</p>'; return; }
+    const p=projOf(pageId);
+    if(!p){ el.innerHTML=`<div class="pp"><nav class="pp-nav"><a class="pp-back" href="#">← ${VIEW_NAMES[lastView]}</a></nav><p class="empty">That project isn't here any more.</p></div>`; return; }
+    const h=hue(p.id), all=items.filter(i=>i.project===p.id), open=all.filter(i=>i.status!=='done');
+    const by={todo:[],doing:[],review:[],done:[]}; all.forEach(i=>by[stageOf(i)].push(i));
+    ['todo','doing','review'].forEach(s=>by[s].sort(sortOpen));
+    by.done.sort((a,b)=>(b.done_at||'').localeCompare(a.done_at||''));
+    const openBy={}; items.forEach(i=>{ if(i.status!=='done') openBy[i.project]=(openBy[i.project]||0)+1; });
+    const dd=days(p.deadline);
+    const dlChip=p.deadline?`<span class="chip ${dd<0?'late':dd<=14?'soon':''}">${dd<0?'past deadline':dd===0?'due today':dd+' days left'}</span>`:'';
+    const dated=open.filter(i=>i.due).sort((a,b)=>a.due.localeCompare(b.due));
+    const nextDue=dated.find(i=>days(i.due)>=0);
+    const overdue=dated.filter(i=>days(i.due)<0).length;
+    const bar=all.length?`<div class="mini-bar" aria-hidden="true">${['done','review','doing','todo'].map(s=>by[s].length?`<i style="width:${by[s].length/all.length*100}%;background:hsl(${h} 70% ${s==='done'?45:s==='review'?58:s==='doing'?68:85}%)"></i>`:'').join('')}</div>`:'';
+    const stat=(b,s,cls='')=>`<div class="pp-stat ${cls}"><b>${b}</b><span>${s}</span></div>`;
+
+    const head = pageEdit ? pageForm(p) : `
+      <div class="pp-title"><span class="swatch"></span><h2>${esc(p.name)}</h2>
+        <div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dlChip}${p.deliverable&&p.status!=='done'?'<button class="mini" type="button" data-pp-framework title="Kind, deliverable and milestones">Framework…</button>':''}<button class="mini" type="button" data-pp-edit>Edit</button>${p.status!=='done'?'<button class="mini" type="button" data-pp-close title="Wrap the project up">Close out…</button>':''}</div></div>
+      ${p.goal?`<p class="pp-goal">${esc(p.goal)}</p>`:`<p class="empty">No goal yet. <button type="button" class="linkish" data-pp-edit>Add one</button></p>`}
+      ${p.deliverable?`<p class="pp-deliv"><span class="label">Deliverable</span> ${esc(p.deliverable)}</p>`:p.status==='done'?'':`<p class="pp-warn">No deliverable yet: what will this project produce? <button type="button" class="mini primary" data-pp-framework>Suggest a framework</button></p>`}
+      ${p.status==='done'?closedBanner(p):''}
+      <div class="pp-stats">${stat(open.length,'open')}${stat(by.doing.length,'in progress')}${stat(by.review.length,'in review')}${stat(by.done.length,'done')}${overdue?stat(overdue,'overdue','late'):''}${nextDue?stat(fmt(nextDue.due),'next due'):''}${p.deadline?stat(fmt(p.deadline),'deadline',dd!==null&&dd<=7?'late':''):''}</div>
+      ${bar}`;
+
+    const emptyLane={todo:'Nothing waiting',doing:'Nothing in progress',review:'Nothing to review',done:'Nothing finished yet'};
+    cardTags=false; // every card on this page is the same project
+    const lanes=STAGES.map(s=>{
+      const list=s.id==='done'?by.done.slice(0,doneShown):by[s.id];
+      return `<div class="lane pp-lane" data-stage="${s.id}"><div class="lane-head"><h3>${s.label}</h3><span class="n">${by[s.id].length}</span></div>
+        <div class="lane-body">${list.map(it=>card(it)).join('')||`<p class="lane-empty">${emptyLane[s.id]}</p>`}</div>
+        ${s.id==='done'&&by.done.length>doneShown?`<button class="lane-add" type="button" data-pp-moredone>Show ${by.done.length-doneShown} more</button>`:''}</div>`;
+    }).join('');
+    cardTags=null;
+
+    const pf=filesOf(p), taskFiles=all.flatMap(it=>filesOf(it).map(f=>({f,it})));
+    const soon=dated.filter(i=>days(i.due)<=21);
+    const folder=p.folder?`<span class="pp-folder"><button type="button" class="fname" data-fopen="${esc(p.folder)}" title="Open ${esc(p.folder)}">${ICON.folder}${esc(baseName(p.folder))}</button><button type="button" class="mini" data-freveal="${esc(p.folder)}">Show</button></span><span class="fpath" title="${esc(p.folder)}">${esc(dirName(p.folder))}</span>${fstat.get(p.folder)?.exists===false?'<span class="chip late">not on this Mac</span>':''}`
+      :`<button type="button" class="mini" data-pp-mkfolder>Create a project folder</button> <span class="fpath">or</span> <button type="button" class="linkish" data-pp-folder>link one…</button>`;
+
+    const html=`<div class="pp" style="--h:${h}" data-drop="projects:${esc(p.id)}">
+      <nav class="pp-nav"><a class="pp-back" href="#">← ${VIEW_NAMES[lastView]}</a>
+        <div class="filters pp-switch" aria-label="Projects">${ordered().map(q=>`<a class="fchip" href="${pageHref(q.id)}" style="--h:${hue(q.id)}" ${q.id===p.id?'aria-current="page"':''}><span class="sw"></span>${esc(q.name)}<span class="n">${openBy[q.id]||0}</span></a>`).join('')}</div></nav>
+      <header class="panel pp-head">${head}</header>
+      <div class="pp-grid">
+        <section class="panel"><div class="panel-head"><h3 class="sec-h">Overview</h3>${p.summary&&!pageEdit?'<button class="mini" type="button" data-pp-edit>Edit</button>':''}</div>
+            ${p.summary?`<div class="pp-text">${fmtText(p.summary)}</div>`:`<p class="empty">What this project is, where it stands, what's left. <button type="button" class="linkish" data-pp-edit>Write an overview</button></p>`}</section>
+        <section class="panel"><h3 class="sec-h">Details</h3>
+            <dl class="pp-dl">
+              <dt>Kind</dt><dd>${esc(kindLabel(p.type))}${p.role==='contributor'?' · contributing a part':''}</dd>
+              <dt>Deliverable</dt><dd>${p.deliverable?esc(p.deliverable):'<span class="warn">None yet.</span> <button type="button" class="linkish" data-pp-framework>Suggest a framework</button>'}</dd>
+              <dt>Folder</dt><dd>${folder}</dd>
+              <dt>Deadline</dt><dd>${p.deadline?`${new Date(p.deadline+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'long',day:'numeric',year:'numeric'})}`:'None set'}</dd>
+              <dt>Status</dt><dd>${esc(p.status||'active')} · ${esc(p.tier||'standard')}</dd>
+              ${p.context?`<dt>Context</dt><dd>${esc(p.context)}</dd>`:''}
+            </dl></section>
+      </div>
+          <section class="panel pp-tasks"><div class="panel-head"><h3 class="sec-h">Tasks</h3><button class="mini" type="button" data-pp-board>Open on board</button></div>
+            <form class="pp-add" id="pp-add-form"><input id="pp-add" value="${esc(pageAdd)}" placeholder="Add a task to ${esc(p.name)}…" aria-label="New task" autocomplete="off">
+              <select id="pp-add-stage" aria-label="Lane">${STAGES.filter(s=>s.id!=='done').map(s=>`<option value="${s.id}" ${pageAddStage===s.id?'selected':''}>${s.label}</option>`).join('')}</select>
+              <button class="btn" type="submit">Add</button></form>
+            <div class="pp-lanes">${lanes}</div>
+            <p class="board-hint">Click a card for its notes and files. Drag cards between lanes.</p></section>
+      <div class="pp-grid">
+        <section class="panel"><div class="panel-head"><h3 class="sec-h">Notes</h3><span class="label" id="pp-notes-state">Saved as you type</span></div>
+            <textarea id="pp-notes" class="pp-notes" rows="7" placeholder="Meeting notes, decisions, open questions…">${esc(p.notes||'')}</textarea>
+          <div class="panel-head" style="margin-top:6px"><h3 class="sec-h">Coming up</h3><span class="label">Next 3 weeks</span></div>
+            ${soon.length?`<ul class="list">${soon.map(it=>`<li class="pp-due" data-drop="items:${esc(it.id)}"><button type="button" class="ftask" data-open="${esc(it.id)}">${esc(it.text)}</button>${dueChip(it.due)}</li>`).join('')}</ul>`:'<p class="empty">Nothing dated in the next three weeks.</p>'}
+        </section>
+        <aside class="pp-side">
+          <section class="panel pp-files" data-drop="projects:${esc(p.id)}"><div class="panel-head"><h3 class="sec-h">Files</h3><span class="label">${pf.length+taskFiles.length||''}</span></div>
+            ${pf.length?`<ul class="files">${pf.map(f=>fileRow(f,'projects:'+p.id)).join('')}</ul>`:'<p class="empty">Key documents for the whole project: drafts, plans, figures.</p>'}
+            ${linkControls('projects:'+p.id)}
+            ${taskFiles.length?`<p class="label" style="margin-top:6px">Linked to tasks</p><ul class="files">${taskFiles.map(({f,it})=>fileRow(f,'items:'+it.id,{task:it})).join('')}</ul>`:''}
+          </section>
+        </aside>
+      </div></div>`;
+    keepFocus(el, ()=>{ el.innerHTML=html; });
+    ensureStats([...pf.map(f=>f.path), ...taskFiles.map(x=>x.f.path), p.folder]);
+  }
+
+  function pageForm(p){
+    const d={...p,...pageDraft};
+    const opt=(list,cur)=>list.map(t=>`<option value="${t}" ${cur===t?'selected':''}>${t}</option>`).join('');
+    return `<form class="proj-form" id="pp-form">
+      <div class="field"><label for="ppf-name">Name</label><input id="ppf-name" name="name" value="${esc(d.name||'')}" required></div>
+      <div class="field"><label for="ppf-goal">Goal</label><textarea id="ppf-goal" name="goal" rows="2">${esc(d.goal||'')}</textarea></div>
+      <div class="field"><label for="ppf-deliv">Deliverable (the one thing this project produces)</label><input id="ppf-deliv" name="deliverable" value="${esc(d.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology"></div>
+      <div class="field"><label for="ppf-summary">Overview (blank line between paragraphs, "- " for bullets)</label><textarea id="ppf-summary" name="summary" rows="8">${esc(d.summary||'')}</textarea></div>
+      <div class="pf-row">
+        <div class="field"><label for="ppf-type">Kind</label><select id="ppf-type" name="type">${projectKinds.map(k=>`<option value="${k.id}" ${(d.type||'other')===k.id?'selected':''}>${esc(k.label)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ppf-role">Your part</label><select id="ppf-role" name="role">${roleOpts(d.role)}</select></div>
+        <div class="field"><label for="ppf-deadline">Deadline</label><input type="date" id="ppf-deadline" name="deadline" value="${esc(d.deadline||'')}"></div>
+        <div class="field"><label for="ppf-tier">Tier</label><select id="ppf-tier" name="tier">${opt(['major','standard'],d.tier||'standard')}</select></div>
+        <div class="field"><label for="ppf-status">Status</label><select id="ppf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
+      </div>
+      <div class="field"><label for="ppf-folder">Project folder</label><div class="flink"><input id="ppf-folder" name="folder" value="${esc(d.folder||'')}" placeholder="~/Documents/Projects/…" spellcheck="false"><button class="mini" type="button" data-pp-folderpick>Choose…</button></div></div>
+      <div class="field"><label for="ppf-context">Context (people, repos, links)</label><input id="ppf-context" name="context" value="${esc(d.context||'')}"></div>
+      <div class="compose-row"><button class="btn" type="submit">Save</button><button class="ghost" type="button" data-pp-cancel>Cancel</button></div>
+    </form>`;
+  }
+
+  async function saveNotes(v){
+    clearTimeout(notesTimer);
+    const p=projOf(pageId); if(!p || (p.notes||'')===v) return;
+    try{ await db.doc('projects/'+p.id).update({notes:v}); const s=$('pp-notes-state'); if(s) s.textContent='Saved'; }
+    catch(err){ const s=$('pp-notes-state'); if(s) s.textContent='Not saved: '+err.message; }
+  }
+
+  $('proj-view').addEventListener('click', async e=>{
+    const p=projOf(pageId); if(!p) return;
+    if(e.target.closest('[data-pp-edit]')){ pageEdit=true; pageDraft={}; renderPage(); setTimeout(()=>$('ppf-name')?.focus(),0); return; }
+    if(e.target.closest('[data-pp-framework]')){ openFramework(p.id); return; }
+    if(e.target.closest('[data-pp-close]')){ openCloseout(p.id); return; }
+    if(e.target.closest('[data-pp-reopen]')){
+      try{ await db.doc('projects/'+p.id).update({status:'active'}); toast(`${p.name} is open again. Its close-out record is kept.`); }
+      catch(err){ toast('Could not reopen it: '+err.message, true); }
+      return;
+    }
+    const mk=e.target.closest('[data-pp-mkfolder]');
+    if(mk){
+      mk.disabled=true;
+      try{ const r=await db.call('POST','/api/project-folder',{id:p.id}); await db.refreshAll(); toast(r.notice||'Folder created.', /^Couldn|^Didn/.test(r.notice||'')); }
+      catch(err){ mk.disabled=false; toast('Could not create the folder: '+err.message, true); }
+      return;
+    }
+    if(e.target.closest('[data-pp-cancel]')){ pageEdit=false; pageDraft={}; renderPage(); return; }
+    if(e.target.closest('[data-pp-board]')){ filter=p.id; saveFilter(); setView('board'); window.scrollTo(0,0); return; }
+    if(e.target.closest('[data-pp-moredone]')){ doneShown+=20; renderPage(); return; }
+    if(e.target.closest('[data-pp-folderpick]')){
+      try{ const r=await db.call('POST','/api/pick',{folder:true, start:pageDraft.folder||p.folder||''}); if(r.paths?.[0]){ pageDraft.folder=r.paths[0]; const i=$('ppf-folder'); if(i) i.value=r.paths[0]; } }
+      catch(err){ toast('Could not open the file chooser: '+err.message, true); }
+      return;
+    }
+    if(e.target.closest('[data-pp-folder]')){
+      try{ const r=await db.call('POST','/api/pick',{folder:true, start:''}); if(r.paths?.[0]) await db.doc('projects/'+p.id).update({folder:r.paths[0]}); }
+      catch(err){ toast('Could not link the folder: '+err.message, true); }
+    }
+  });
+  $('proj-view').addEventListener('input', e=>{
+    if(e.target.closest('#pp-form') && e.target.name) pageDraft[e.target.name]=e.target.value;
+    if(e.target.id==='pp-add') pageAdd=e.target.value;
+    if(e.target.id==='pp-notes'){ const s=$('pp-notes-state'); if(s) s.textContent='Editing…'; clearTimeout(notesTimer); const v=e.target.value; notesTimer=setTimeout(()=>saveNotes(v),1200); }
+  });
+  $('proj-view').addEventListener('change', e=>{
+    if(e.target.closest('#pp-form') && e.target.name) pageDraft[e.target.name]=e.target.value;
+    if(e.target.id==='pp-add-stage') pageAddStage=e.target.value;
+  });
+  $('proj-view').addEventListener('focusout', e=>{ if(e.target.id==='pp-notes') saveNotes(e.target.value); });
+  $('proj-view').addEventListener('submit', async e=>{
+    const p=projOf(pageId); if(!p) return;
+    if(e.target.id==='pp-add-form'){
+      e.preventDefault();
+      const text=pageAdd.trim(); if(!text) return;
+      try{ pageAdd=''; await addItem(text, p.id, pageAddStage); $('pp-add')?.focus(); }
+      catch(err){ pageAdd=text; toast('Could not add the task: '+err.message, true); renderPage(); }
+    }
+    if(e.target.id==='pp-form'){
+      e.preventDefault();
+      const f=new FormData(e.target), data={};
+      for(const k of ['name','goal','deliverable','type','role','summary','deadline','tier','status','folder','context']) data[k]=(f.get(k)||'').toString().trim();
+      if(!data.name) return;
+      if(data.folder){ try{ const [s]=await db.call('POST','/api/stat',{paths:[data.folder]}); if(!s.exists||!s.dir){ toast(`There's no folder at ${data.folder}.`, true); return; } data.folder=s.path; }catch(_){} }
+      try{ await db.doc('projects/'+p.id).update(data); pageEdit=false; pageDraft={}; renderPage(); }
+      catch(err){ toast('Could not save the project: '+err.message, true); }
+    }
+  });
+
+  // ---- framework: kind, deliverable, deadline, overview, milestones and folder ----
+  // Work Desk proposes (Jev picks the kind; the chat model writes the rest); nothing changes until Apply.
+  let planResolve=null, planInfo=null;
+  const ROLES=[['lead','Leading it'],['contributor','Contributing a part']];
+  const roleOpts=cur=>ROLES.map(([v,l])=>`<option value="${v}" ${(cur||'lead')===v?'selected':''}>${l}</option>`).join('');
+  const kindLabel=id=>(projectKinds.find(k=>k.id===(id||'other'))||{}).label||'Other';
+  const folderList=kind=>((projectKinds.find(k=>k.id===kind)||projectKinds.find(k=>k.id==='other')||{}).folders||[]).join(' ');
+  function slugOf(n){ let o=''; for(const ch of (n||'').trim().toLowerCase()){ if(/[a-z0-9]/.test(ch)) o+=ch; else if(o && !o.endsWith('-')) o+='-'; } return o.replace(/-+$/,'').slice(0,40).replace(/-+$/,''); }
+
+  // Show a proposal for `info` (name, folder, deadline, deliverable, type, wantFolder); resolves with what
+  // the person confirmed, or null if they cancel.
+  async function askFramework(info, body){
+    planInfo=info; const d=$('plan-dlg');
+    d.innerHTML=`<div class="td-body"><div class="td-head"><h3 class="sec-h">Framework for ${esc(info.name)}</h3><button type="button" class="icon-btn close" data-plcancel aria-label="Cancel">${ICON.x}</button></div><p class="empty">Working out what kind of project this is, what it delivers, and the steps to get there…</p></div>`;
+    if(!d.open) d.showModal();
+    let s; try{ s=await db.call('POST','/api/plan',body); }catch(err){ s={error:err.message}; }
+    if(!d.open) return null;
+    renderPlan(s);
+    return new Promise(res=>{ planResolve=res; });
+  }
+  function renderPlan(s){
+    const info=planInfo, kind=s.type||info.type||'other', ms=s.milestones||[];
+    const opts=projectKinds.map(k=>`<option value="${k.id}" ${k.id===kind?'selected':''}>${esc(k.label)}</option>`).join('');
+    $('plan-dlg').innerHTML=`<form class="td-body" id="plan-form">
+      <div class="td-head"><h3 class="sec-h">Framework for ${esc(info.name)}</h3><button type="button" class="icon-btn close" data-plcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${s.error?`<p class="warn" style="margin:0">${esc(s.error)} You can fill it in yourself.</p>`:'<p class="fd-why">Check it over and change anything. Nothing is saved until you press Apply.</p>'}
+      <div class="ed-grid td-fields">
+        <div class="field"><label for="pl-type">Kind of project ${s.type_by==='jev'&&s.type_p!=null?`<span class="triage-by" title="Jev's estimate">Jev ${Math.round(s.type_p*100)}%</span>`:''}</label><select id="pl-type">${opts}</select></div>
+        <div class="field"><label for="pl-role">Your part</label><select id="pl-role">${roleOpts(s.role||info.role)}</select></div>
+        <div class="field"><label for="pl-deadline">Deadline</label><input type="date" id="pl-deadline" value="${esc(s.deadline||info.deadline||'')}"></div>
+      </div>
+      <div class="field"><label for="pl-deliv">Deliverable: the one thing this project produces</label><input id="pl-deliv" value="${esc(s.deliverable||info.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology" required></div>
+      <div class="field"><label for="pl-summary">Overview</label><textarea id="pl-summary" rows="3">${esc(s.summary||'')}</textarea></div>
+      <div class="field"><label>Milestones, added as tasks</label>
+        ${ms.length?`<ul class="fd-tasks">${ms.map((m,i)=>`<li class="fd-task pl-m"><input type="checkbox" ${m.repeats?'':'checked'} aria-label="Add this milestone"><textarea rows="1" aria-label="Milestone ${i+1}">${esc(m.text)}</textarea><input type="date" aria-label="Due" value="${esc(m.due||'')}">${m.repeats?`<span class="pl-dup">Already a task: “${esc(m.repeats)}”</span>`:''}</li>`).join('')}</ul>`:'<p class="empty">None suggested.</p>'}
+      </div>
+      ${info.folder?`<p class="hint" style="margin:0">Folder <code>${esc(info.folder)}</code> stays as it is.</p>`
+        :`<label class="pf-check"><input type="checkbox" id="pl-folder" ${(info.wantFolder??kind!=='task')?'checked':''}> Create <code>${esc(projectsRoot)}/${esc(slugOf(info.name)||'project')}</code> with <span id="pl-folders">${esc(folderList(kind))}</span></label>`}
+      ${s.assumptions?.length?`<details class="fd-orig"><summary>What Work Desk assumed</summary><ul>${s.assumptions.map(a=>`<li>${esc(a)}</li>`).join('')}</ul></details>`:''}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-plcancel>Cancel</button><button type="submit" class="btn">Apply</button></div>
+    </form>`;
+    setTimeout(()=>$('pl-deliv')?.focus(),0);
+  }
+  const pdlg=$('plan-dlg');
+  pdlg.addEventListener('click', e=>{ if(e.target===pdlg || e.target.closest('[data-plcancel]')) pdlg.close(); });
+  pdlg.addEventListener('change', e=>{
+    if(e.target.id!=='pl-type') return;
+    const f=$('pl-folders'); if(f) f.textContent=folderList(e.target.value);
+    const c=$('pl-folder'); if(c && planInfo.wantFolder==null) c.checked=e.target.value!=='task';
+  });
+  pdlg.addEventListener('submit', e=>{
+    e.preventDefault();
+    const milestones=[...pdlg.querySelectorAll('.pl-m')].filter(li=>li.querySelector('input[type=checkbox]').checked)
+      .map(li=>({text:li.querySelector('textarea').value.trim(), due:li.querySelector('input[type=date]').value||null})).filter(m=>m.text);
+    const out={type:$('pl-type').value, role:$('pl-role').value, deliverable:$('pl-deliv').value.trim(), deadline:$('pl-deadline').value||'', summary:$('pl-summary').value.trim(), milestones, make_folder:!!$('pl-folder')?.checked};
+    const res=planResolve; planResolve=null; pdlg.close(); res?.(out);
+  });
+  pdlg.addEventListener('close', ()=>{ if(planResolve){ const r=planResolve; planResolve=null; r(null); } });
+
+  async function openFramework(id){
+    const p=projOf(id); if(!p) return;
+    const r=await askFramework({name:p.name, folder:p.folder, deadline:p.deadline, deliverable:p.deliverable, type:p.type, role:p.role}, {id});
+    if(!r) return;
+    try{ const out=await db.call('POST','/api/framework',{id, ...r}); await db.refreshAll(); toast(out.notice?`Framework saved. ${out.notice}`:'Framework saved.', /^Couldn|Couldn't/.test(out.notice||'')); }
+    catch(err){ toast('Could not save the framework: '+err.message, true); }
+  }
+
+  // ---- close-out: deliverable, final version, loose ends, wrap-up, CLOSEOUT.md ----
+  let closeInfo=null;
+  function closedBanner(p){
+    const c=p.closeout||{};
+    return `<div class="pp-closed"><p><b>Closed out${p.closed_at?' '+esc(fmt(isoOf(p.closed_at))):''}.</b>
+      ${c.link?`Final version: <button type="button" class="linkish" data-fopen="${esc(c.link)}" title="${esc(c.link)}">${esc(baseName(c.link))}</button>`:''}
+      ${c.tag?`<span class="chip" title="Git tag on the final state">${esc(c.tag)}</span>`:''}
+      <button type="button" class="mini" data-pp-reopen>Reopen</button></p>
+      ${c.summary?`<details><summary>Wrap-up</summary><div class="pp-text">${fmtText(c.summary)}</div></details>`:''}</div>`;
+  }
+  async function openCloseout(id){
+    const p=projOf(id); if(!p) return;
+    closeInfo={id, p};
+    const d=$('close-dlg');
+    d.innerHTML=`<div class="td-body"><div class="td-head"><h3 class="sec-h">Close out ${esc(p.name)}</h3><button type="button" class="icon-btn close" data-clcancel aria-label="Cancel">${ICON.x}</button></div><p class="empty">Gathering the loose ends and drafting the wrap-up…</p></div>`;
+    if(!d.open) d.showModal();
+    let s; try{ s=await db.call('POST','/api/closeout-plan',{id}); }catch(err){ s={error:err.message}; }
+    if(!d.open) return;
+    renderCloseout({open:[], others:[], done:0, ...s});
+  }
+  function renderCloseout(s){
+    const p=closeInfo.p;
+    const fate=t=>`<select data-cl-task="${esc(t.id)}" aria-label="What happens to this task">
+        <option value="done" ${t.action==='done'?'selected':''}>Mark done</option>
+        <option value="move:inbox" ${t.action==='move'&&t.to==='inbox'?'selected':''}>Move to the Inbox</option>
+        ${s.others.map(o=>`<option value="move:${esc(o.id)}" ${t.action==='move'&&t.to===o.id?'selected':''}>Move to ${esc(o.name)}</option>`).join('')}
+        <option value="drop" ${t.action==='drop'?'selected':''}>Drop it</option></select>`;
+    const n=s.open.length;
+    $('close-dlg').innerHTML=`<form class="td-body" id="close-form">
+      <div class="td-head"><h3 class="sec-h">Close out ${esc(p.name)}</h3><button type="button" class="icon-btn close" data-clcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${s.error?`<p class="warn" style="margin:0">${esc(s.error)}</p>`:''}${(s.notes||[]).map(x=>`<p class="hint" style="margin:0">${esc(x)}</p>`).join('')}
+      <div class="field"><label for="cl-deliv">Deliverable</label><input id="cl-deliv" value="${esc(s.deliverable||p.deliverable||'')}" placeholder="What this project produced"></div>
+      <div class="field"><label for="cl-link">Final version: a file, folder or link</label><div class="flink"><input id="cl-link" placeholder="~/… or https://…" spellcheck="false"><button class="mini" type="button" data-cl-pick>Choose…</button></div></div>
+      <div class="field"><label>Loose ends: ${n?`${n} open task${n>1?'s':''}`:'none'} · ${s.done} done</label>
+        ${n?`<ul class="cl-ends">${s.open.map(t=>`<li><span class="cl-text">${esc(t.text||'')}</span>${fate(t)}${t.why?`<span class="pl-dup">${esc(t.why)}</span>`:''}</li>`).join('')}</ul>`:'<p class="empty">Every task is finished.</p>'}
+      </div>
+      <div class="field"><label for="cl-summary">Wrap-up, kept with the project${s.folder?' and in CLOSEOUT.md':''}</label><textarea id="cl-summary" rows="9" placeholder="Delivered… Where it lives… What was done… Decisions worth remembering…">${esc(s.summary||'')}</textarea></div>
+      ${!s.folder?'':s.repo?`<label class="pf-check"><input type="checkbox" id="cl-commit" checked> Write CLOSEOUT.md, commit just that file, and tag the final state <code>${esc(s.tag||'closeout')}</code></label>
+          ${s.uncommitted_count?`<p class="hint" style="margin:0">${s.uncommitted_count} uncommitted change${s.uncommitted_count>1?'s':''} in the folder won't be part of it (${esc(s.uncommitted.map(l=>l.trim()).join(', '))}${s.uncommitted_count>s.uncommitted.length?', …':''}). Commit them first if they belong in the final version.</p>`:''}`
+        :'<p class="hint" style="margin:0">CLOSEOUT.md will be written to the folder. It isn\'t a git repo, so nothing is committed.</p>'}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-clcancel>Cancel</button><button type="submit" class="btn done-btn">${ICON.check}Close out project</button></div>
+    </form>`;
+    setTimeout(()=>$('cl-link')?.focus(),0);
+  }
+  const cdlg=$('close-dlg');
+  cdlg.addEventListener('click', async e=>{
+    if(e.target===cdlg || e.target.closest('[data-clcancel]')){ cdlg.close(); return; }
+    if(e.target.closest('[data-cl-pick]')){
+      try{ const r=await db.call('POST','/api/pick',{folder:false, start:closeInfo?.p.folder||''}); if(r.paths?.[0]) $('cl-link').value=r.paths[0]; }
+      catch(err){ toast('Could not open the file chooser: '+err.message, true); }
+    }
+  });
+  cdlg.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const tasks=[...cdlg.querySelectorAll('[data-cl-task]')].map(sel=>{ const [action,to]=sel.value.split(':'); return {id:sel.dataset.clTask, action, to:to||null}; });
+    const body={id:closeInfo.id, deliverable:$('cl-deliv').value.trim(), link:$('cl-link').value.trim(), summary:$('cl-summary').value.trim(), tasks, commit:!!$('cl-commit')?.checked};
+    const btn=cdlg.querySelector('button[type=submit]'), at=btn.getBoundingClientRect();
+    btn.disabled=true;
+    try{
+      const r=await db.call('POST','/api/closeout',body);
+      cdlg.close(); await db.refreshAll();
+      confetti(at.left+at.width/2, at.top+at.height/2, true); chime(true);
+      toast(r.notice||'Closed out.', /Couldn/.test(r.notice||''));
+    }catch(err){ btn.disabled=false; toast('Could not close it out: '+err.message, true); }
+  });
+
+  // ---- task details dialog ----
+  function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); checkPrompt(id); }
+  function checkPrompt(id){
+    if(!itemOf(id)?.prompt) return;
+    db.call('POST','/api/prompt-check',{id}).then(r=>{ promptStale.set(id,r); if(dlgId===id) renderTaskDlg(); }).catch(()=>{});
+  }
+  function refreshTaskDlg(){ if($('task-dlg').open) renderTaskDlg(); }
+  function renderTaskDlg(){
+    const d=$('task-dlg'), it=itemOf(dlgId);
+    if(!it){ if(d.open) d.close(); return; }
+    const fs=filesOf(it), target='items:'+it.id, p=projOf(it.project);
+    keepFocus(d, ()=>{ d.innerHTML=`<div class="td-body">
+      <div class="td-head"><div class="meta">${tag(it.project)}${dueChip(it.due)}${staleInfo(it)!==null?`<span class="chip soon">idle ${staleInfo(it)}d</span>`:''}${jevChips(it)}</div>
+        <button type="button" class="icon-btn close" data-tclose aria-label="Close">${ICON.x}</button></div>
+      <textarea id="td-text" class="td-title" rows="2" aria-label="Task">${esc(it.text)}</textarea>
+      <div class="ed-grid td-fields">
+        <div class="field"><label for="td-proj">Project</label><select id="td-proj"><option value="inbox" ${it.project==='inbox'?'selected':''}>Inbox</option>${ordered().map(q=>`<option value="${esc(q.id)}" ${q.id===it.project?'selected':''}>${esc(q.name)}</option>`).join('')}</select></div>
+        <div class="field"><label for="td-stage">Stage</label><select id="td-stage">${STAGES.map(s=>`<option value="${s.id}" ${stageOf(it)===s.id?'selected':''}>${s.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="td-start">Start</label><input type="date" id="td-start" value="${esc(it.start||'')}"></div>
+        <div class="field"><label for="td-due">Due</label><input type="date" id="td-due" value="${esc(it.due||'')}"></div>
+      </div>
+      <div class="field"><label for="td-notes">Notes</label><textarea id="td-notes" rows="4" placeholder="Details, decisions, what done looks like…">${esc(it.notes||'')}</textarea></div>
+      ${promptSection(it, p)}
+      <section class="td-files" data-drop="${esc(target)}"><div class="panel-head"><h3 class="sec-h">Files</h3><span class="label">${fs.length||''}</span></div>
+        ${fs.length?`<ul class="files">${fs.map(f=>fileRow(f,target)).join('')}</ul>`:'<p class="empty">Nothing linked yet: scripts, drafts, figures, data folders or web links.</p>'}
+        ${linkControls(target)}</section>
+      <div class="td-foot">
+        ${dlgDelete?`<span class="warn">Delete this task for good?</span><button type="button" class="mini danger" data-tdel-yes>Delete</button><button type="button" class="mini" data-tdel-no>Keep it</button>`:`<button type="button" class="ghost danger" data-tdel>Delete task</button>`}
+        <span class="td-spacer"></span>
+        ${p?`<a class="mini" href="${pageHref(p.id)}" data-tclose>Project page</a>`:''}
+        <button type="button" class="ghost" data-tclose>Close</button>
+        ${it.status==='done'?'<button type="button" class="mini" data-treopen>Reopen</button>':`<button type="button" class="btn done-btn" data-tdone>${ICON.check}Mark done</button>`}
+      </div></div>`; });
+  }
+  // Jev's judgments kept on a task (sized when the brief runs): its size, and whether it looks stuck.
+  function jevChips(it){
+    const j=it.jev; if(!j || it.status==='done') return '';
+    const h=j.hours, size=h==null?'':h<1?`~${Math.max(5,Math.round(h*60))} min`:`~${Math.round(h*10)/10} h`;
+    return (size?`<span class="chip" title="Jev's estimate of the work">${size}</span>`:'')
+      +(j.waiting>=0.6?`<span class="chip soon" title="Jev: probably waiting on someone (${Math.round(j.waiting*100)}%)">waiting</span>`:'')
+      +(j.vague>=0.6?`<span class="chip soon" title="Jev: decide what done looks like first (${Math.round(j.vague*100)}%)">vague</span>`:'');
+  }
+
+  // A prompt for Claude Code, drafted from the task and its project; editable, kept on the task.
+  function promptSection(it, p){
+    const busy=promptBusy===it.id, folder=p?.folder, st=promptStale.get(it.id);
+    const head=`<div class="panel-head"><h3 class="sec-h">Prompt for Claude</h3>${it.prompt&&!busy?`<div class="meta"><button type="button" class="mini${st?.stale?' primary':''}" data-pdraft title="Revise it for what's in the project folder now, keeping your edits">Update</button><button type="button" class="linkish" data-pdraft data-fresh="1" title="Write a new prompt from scratch">Start over</button></div>`:''}</div>`;
+    if(busy) return `<section class="td-prompt">${head}<p class="empty">${promptMode==='update'?'Reading the project folder and updating the prompt…':'Reading the project folder and drafting…'}</p></section>`;
+    if(!it.prompt) return `<section class="td-prompt">${head}<p class="empty">Work Desk can write a prompt for Claude Code from this task, its notes and files, the project's goal, and what's already in the project folder's scripts and notebooks. You can edit it before copying.</p>
+      <div><button type="button" class="mini primary" data-pdraft ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}>Draft prompt</button></div></section>`;
+    return `<section class="td-prompt">${head}
+      ${st?.stale?`<p class="hint pp-stale">The project folder has changed since this was written: ${esc(st.changed.join(', '))}${st.more?` and ${st.more} more`:''}. Update to bring the prompt up to date.</p>`:''}
+      <textarea id="td-prompt" rows="12" aria-label="Prompt for Claude">${esc(it.prompt)}</textarea>
+      <div class="compose-row"><button type="button" class="btn" data-pcopy>Copy</button>${folder?`<button type="button" class="mini" data-peditor="${esc(folder)}" title="Open ${esc(folder)}">${ICON.folder}Open ${esc(baseName(folder))} in ${esc(editorShort())}</button>`:''}</div></section>`;
+  }
+  const editorShort=()=>editorName==='Visual Studio Code'?'VS Code':editorName;
+  async function copyText(t){
+    try{ await navigator.clipboard.writeText(t); return; }catch(_){}
+    await db.call('POST','/api/copy',{text:t});
+  }
+
+  async function saveTaskField(id, patch){
+    const it=itemOf(id); if(!it) return;
+    if(Object.keys(patch).every(k=>(it[k]??'')===(patch[k]??''))) return;
+    try{ await db.doc('items/'+id).update(patch); }catch(err){ toast('Could not save: '+err.message, true); }
+  }
+  function saveDlgText(){
+    if(!dlgId) return;
+    const t=$('td-text'), n=$('td-notes'), pr=$('td-prompt'), patch={};
+    if(t && t.value.trim() && t.value.trim()!==itemOf(dlgId)?.text) patch.text=t.value.trim();
+    if(n && n.value!==(itemOf(dlgId)?.notes||'')) patch.notes=n.value;
+    if(pr && pr.value!==(itemOf(dlgId)?.prompt||'')) patch.prompt=pr.value;
+    if(Object.keys(patch).length) return saveTaskField(dlgId, patch);
+  }
+  const dlg=$('task-dlg');
+  dlg.addEventListener('click', async e=>{
+    if(e.target===dlg || e.target.closest('[data-tclose]')){ dlg.close(); return; }
+    if(e.target.closest('[data-tdel]')){ dlgDelete=true; renderTaskDlg(); return; }
+    const td=e.target.closest('[data-tdone]');
+    if(td){
+      // close first: the dialog sits above everything, confetti included
+      const r=td.getBoundingClientRect(), id=dlgId;
+      lastPointer={x:r.left+r.width/2, y:r.top+r.height/2, t:Date.now()};
+      td.classList.add('pressed'); setTimeout(()=>{ dlg.close(); moveTo(id,'done'); }, 120);
+      return;
+    }
+    if(e.target.closest('[data-treopen]')){ moveTo(dlgId,'todo'); return; }
+    const pd=e.target.closest('[data-pdraft]');
+    if(pd){
+      const id=dlgId, fresh=!!pd.dataset.fresh; await saveDlgText();
+      promptMode=itemOf(id)?.prompt&&!fresh?'update':'draft'; promptBusy=id; renderTaskDlg();
+      try{ await db.call('POST','/api/prompt',{id, fresh}); await db.refreshAll(); promptStale.delete(id); }
+      catch(err){ toast('Could not write the prompt: '+err.message, true); }
+      promptBusy=null; renderTaskDlg(); return;
+    }
+    if(e.target.closest('[data-pcopy]')){
+      const v=$('td-prompt')?.value||''; saveDlgText();
+      try{ await copyText(v); toast('Copied. Paste it into Claude.'); }catch(err){ toast('Could not copy: '+err.message, true); }
+      return;
+    }
+    const ed=e.target.closest('[data-peditor]');
+    if(ed){ try{ await db.call('POST','/api/open',{path:ed.dataset.peditor, editor:true}); }catch(err){ toast(err.message, true); } return; }
+    if(e.target.closest('[data-tdel-no]')){ dlgDelete=false; renderTaskDlg(); return; }
+    if(e.target.closest('[data-tdel-yes]')){
+      const id=dlgId;
+      try{ await db.call('DELETE','/api/items/'+encodeURIComponent(id)); dlgId=null; dlg.close(); await db.refreshAll(); toast('Task deleted.'); }
+      catch(err){ toast('Could not delete: '+err.message, true); }
+    }
+  });
+  dlg.addEventListener('close', ()=>{ saveDlgText(); dlgDelete=false; });
+  dlg.addEventListener('change', e=>{
+    const id=dlgId, it=itemOf(id); if(!it) return;
+    if(e.target.id==='td-text'||e.target.id==='td-notes'||e.target.id==='td-prompt') saveDlgText();
+    else if(e.target.id==='td-proj') saveTaskField(id,{project:e.target.value});
+    else if(e.target.id==='td-stage') moveTo(id, e.target.value);
+    else if(e.target.id==='td-start'){ const v=e.target.value||null, patch={start:v}; if(v && !it.due) patch.due=v; saveTaskField(id,patch); }
+    else if(e.target.id==='td-due'){ const v=e.target.value||null, patch={due:v}; if(v && !it.start) patch.start=v; saveTaskField(id,patch); }
+  });
+  dlg.addEventListener('keydown', e=>{ if(e.target.id==='td-text' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); e.target.blur(); } });
+
+  // ---- shared clicks: open a task, open/reveal/unlink/link files ----
+  document.addEventListener('click', e=>{
+    const t=e.target.closest('[data-fopen],[data-freveal],[data-funlink],[data-fpick],[data-open]'); if(!t) return;
+    if(t.dataset.fopen){ e.preventDefault(); openFile(t.dataset.fopen,false); return; }
+    if(t.dataset.freveal){ e.preventDefault(); openFile(t.dataset.freveal,true); return; }
+    if(t.dataset.funlink){ unlinkFile(t.dataset.funlink, t.dataset.path); return; }
+    if(t.dataset.fpick){ pickAndLink(t.dataset.fpick, !!t.dataset.folder); return; }
+    if(t.dataset.open){ e.preventDefault(); openTask(t.dataset.open); }
+  });
+  document.addEventListener('submit', e=>{
+    const f=e.target.closest('.flink[data-target]'); if(!f) return;
+    e.preventDefault();
+    const v=f.querySelector('input').value.trim(); if(!v) return;
+    f.querySelector('input').value='';
+    linkFiles(f.dataset.target, [v]);
+  });
+
+
+  // ================= Finishing a task =================
+  // Local app only: build_ui.py inserts this into the page's script, after project.js.
+  // Confetti from wherever you clicked plus two side cannons, a short chime, and a count of
+  // today's wins. Clearing a project, or 5 or 10 in a day, gets a bigger show. Reduced motion
+  // gets a small burst; the footer's Sound toggle silences the chime.
+  let lastPointer=null;
+  const notePointer=e=>{ lastPointer={x:e.clientX, y:e.clientY, t:Date.now()}; };
+  document.addEventListener('pointerdown', notePointer, true);
+  document.addEventListener('drop', notePointer, true);
+
+  const soundOn=()=>{ try{ return localStorage.getItem('wd-sound')!=='off'; }catch(_){ return true; } };
+  function setSound(on){ try{ localStorage.setItem('wd-sound', on?'on':'off'); }catch(_){} }
+
+  // A soft pop, then a rising arpeggio (C E G C, plus a high E for big moments).
+  function chime(big){
+    if(!soundOn()) return;
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return;
+      const ac=chime.ac||(chime.ac=new AC());
+      if(ac.state==='suspended') ac.resume();
+      const t0=ac.currentTime+0.02, out=ac.createGain();
+      out.gain.value=0.16; out.connect(ac.destination);
+      const len=Math.floor(ac.sampleRate*0.05), buf=ac.createBuffer(1,len,ac.sampleRate), d=buf.getChannelData(0);
+      for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,4);
+      const pop=ac.createBufferSource(), pg=ac.createGain(); pop.buffer=buf; pg.gain.value=0.6;
+      pop.connect(pg); pg.connect(out); pop.start(t0);
+      const notes=big?[523.25,659.25,783.99,1046.5,1318.5]:[523.25,659.25,783.99,1046.5];
+      notes.forEach((f,i)=>{
+        const o=ac.createOscillator(), g=ac.createGain(), t=t0+0.04+i*0.075;
+        o.type='triangle'; o.frequency.value=f;
+        g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(1,t+0.012); g.gain.exponentialRampToValueAtTime(0.0001,t+0.55);
+        o.connect(g); g.connect(out); o.start(t); o.stop(t+0.6);
+      });
+    }catch(_){}
+  }
+
+  const CONFETTI=['#4b3fd6','#9d94ff','#ff5d8f','#ff8a3d','#ffd93d','#3ddc97','#38bdf8','#f472b6','#ffffff'];
+  function drawStar(ctx, r){
+    ctx.beginPath();
+    for(let i=0;i<10;i++){ const a=i*Math.PI/5-Math.PI/2, rr=i%2?r*0.45:r; ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr); }
+    ctx.closePath(); ctx.fill();
+  }
+  function confetti(x, y, big){
+    const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const W=innerWidth, H=innerHeight, dpr=Math.min(2, window.devicePixelRatio||1);
+    const c=document.createElement('canvas'); c.className='confetti'; c.width=W*dpr; c.height=H*dpr;
+    document.body.appendChild(c);
+    const ctx=c.getContext('2d'); ctx.scale(dpr,dpr);
+    const parts=[];
+    const add=(x0,y0,n,angle,spread,speed,lift=0)=>{
+      for(let i=0;i<n;i++){
+        // speeds start near zero so a burst fills in rather than making a ring; `lift` throws it upward first
+        const a=angle+(Math.random()-0.5)*spread, v=speed*(0.12+Math.pow(Math.random(),0.6)*0.95), r=Math.random();
+        parts.push({x:x0, y:y0, vx:Math.cos(a)*v, vy:Math.sin(a)*v-lift, w:7+Math.random()*8, h:9+Math.random()*11,
+          rot:Math.random()*6.28, vrot:(Math.random()-0.5)*0.35, tilt:Math.random()*6.28, vtilt:0.06+Math.random()*0.12,
+          color:CONFETTI[(Math.random()*CONFETTI.length)|0], shape:r<0.22?'circle':r<0.34?'star':'rect', life:0, max:150+Math.random()*110});
+      }
+    };
+    const up=-Math.PI/2, start=performance.now();
+    if(reduce) add(x, y, 36, up, Math.PI*1.1, 7);
+    else{
+      add(x, y, big?400:280, up, Math.PI*2, big?24:20, big?9:7);
+      const side=Math.min(36, 20+H/45)*(big?1.12:1);
+      setTimeout(()=>{ add(-10, H*0.95, big?240:170, -Math.PI/3.1, 0.6, side); add(W+10, H*0.95, big?240:170, -Math.PI+Math.PI/3.1, 0.6, side); }, 140);
+      if(big) setTimeout(()=>add(W/2, -30, 320, Math.PI/2, Math.PI*0.95, 10), 500);
+    }
+    let last=start;
+    function frame(now){
+      const dt=Math.min(2.5,(now-last)/16.67); last=now;
+      ctx.clearRect(0,0,W,H);
+      for(let i=parts.length-1;i>=0;i--){
+        const p=parts[i];
+        p.life+=dt;
+        p.vx*=Math.pow(0.986,dt); p.vy=p.vy*Math.pow(0.986,dt)+0.3*dt;
+        p.x+=p.vx*dt+Math.sin(p.tilt)*0.7; p.y+=p.vy*dt; p.rot+=p.vrot*dt; p.tilt+=p.vtilt*dt;
+        const alpha=Math.min(1,(p.max-p.life)/45);
+        if(alpha<=0 || p.y>H+40){ parts.splice(i,1); continue; }
+        ctx.save(); ctx.globalAlpha=alpha; ctx.translate(p.x,p.y); ctx.rotate(p.rot); ctx.scale(1,Math.cos(p.tilt)); ctx.fillStyle=p.color;
+        if(p.shape==='circle'){ ctx.beginPath(); ctx.arc(0,0,p.w/2,0,6.29); ctx.fill(); }
+        else if(p.shape==='star') drawStar(ctx, p.w*0.85);
+        else ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+        ctx.restore();
+      }
+      if(parts.length || now-start<700) requestAnimationFrame(frame); else c.remove();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  const CHEERS=['Done!','Nailed it.','One less thing.','Crossed off.','Shipped.','That’s a win.','Boom.','Look at you go.','Off your plate.'];
+  // `it` is the task as it was before it was marked done.
+  function celebrate(it){
+    const at=(lastPointer && Date.now()-lastPointer.t<4000)?lastPointer:{x:innerWidth/2, y:innerHeight*0.45};
+    const doneToday=items.filter(i=>i.status==='done' && !i.dropped && i.done_at && isoOf(i.done_at)===TODAY_ISO).length;
+    const proj=it.project && it.project!=='inbox' ? projOf(it.project) : null;
+    const cleared=proj && !items.some(i=>i.project===proj.id && i.status!=='done');
+    const milestone=doneToday===5 || doneToday===10 || (doneToday>10 && doneToday%5===0);
+    const big=!!(cleared || milestone);
+    confetti(at.x, at.y, big);
+    chime(big);
+    const cheer=CHEERS[(Math.random()*CHEERS.length)|0];
+    const count=`${doneToday} done today.`;
+    toast(cleared ? `Every task in ${proj.name} is done! ${count} Close it out from its page.` : milestone ? `${doneToday} done today. You’re on a roll!` : `${cheer} ${count}`);
+  }
+
   function row(it, showProj, extra){
-    return `<li class="row"><input type="checkbox" id="cb-${esc(it.id)}" data-id="${esc(it.id)}" aria-label="Mark done"><label class="txt" for="cb-${esc(it.id)}"><span>${esc(it.text)}</span>${showProj?tag(it.project):''}</label><span class="row-end">${extra||dueChip(it.due)}</span></li>`;
+    return `<li class="row" data-drop="items:${esc(it.id)}"><span class="row-dot" aria-hidden="true"></span><button type="button" class="txt row-txt" data-open="${esc(it.id)}" title="Open details"><span>${esc(it.text)}</span>${showProj?tag(it.project):''}</button><span class="row-end">${fileCount(it)}${extra||dueChip(it.due)}<button class="row-open" type="button" data-open="${esc(it.id)}" aria-label="Open details and files" title="Details and files">${ICON.open}</button></span></li>`;
   }
 
   function renderStats(al){
@@ -470,7 +1387,7 @@ details.done li{text-decoration:line-through;opacity:.8}
 
     const inbox=open.filter(i=>i.project==='inbox');
     let html='';
-    if(inbox.length) html+=`<article class="proj inbox"><div class="proj-head"><div class="proj-name"><h3>Inbox</h3></div><div class="meta"><span class="pill">${inbox.length} to sort</span><button class="mini primary" id="sort-inbox" type="button">Sort inbox</button></div></div><ul class="list">${inbox.map(i=>row(i,false)).join('')}</ul></article>`;
+    if(inbox.length) html+=`<article class="proj inbox"><div class="proj-head"><div class="proj-name"><h3>Inbox</h3></div><div class="meta"><span class="pill">${inbox.length} to sort</span><button class="mini primary" id="sort-inbox" type="button">Sort inbox</button></div></div><ul class="list">${inbox.map(inboxRow).join('')}</ul></article>`;
     if(editingProj==='new') html=projForm({})+html;
     for(const p of ordered()){
       if(editingProj===p.id){ html+=projForm(p); continue; }
@@ -482,8 +1399,8 @@ details.done li{text-decoration:line-through;opacity:.8}
       const dd=days(p.deadline);
       const dl=p.deadline? `<span class="chip ${dd<0?'late':dd<=14?'soon':''}">${dd<0?'past deadline':dd+' days left'}</span>`:'';
       const bar= all.length? `<div class="mini-bar" aria-hidden="true">${['done','review','doing','todo'].map(s=>counts[s]?`<i style="width:${counts[s]/all.length*100}%;background:hsl(${h} 70% ${s==='done'?45:s==='review'?58:s==='doing'?68:85}%)"></i>`:'').join('')}</div><p class="mini-legend">${counts.done} done · ${counts.review} review · ${counts.doing} doing · ${counts.todo} to do</p>`:'';
-      html+=`<article class="proj ${p.status==='waiting'?'quiet':''}" style="--h:${h}">
-        <div class="proj-head"><div class="proj-name"><span class="swatch"></span><h3>${esc(p.name)}</h3></div><div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dl}<button class="mini" data-pedit="${esc(p.id)}" type="button">Edit</button></div></div>
+      html+=`<article class="proj ${p.status==='waiting'||p.status==='done'?'quiet':''}" style="--h:${h}" data-drop="projects:${esc(p.id)}">
+        <div class="proj-head"><div class="proj-name"><span class="swatch"></span><h3><a class="plink" href="${pageHref(p.id)}">${esc(p.name)}</a></h3></div><div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dl}${!(p.deliverable||'').trim()&&(p.status==='active'||p.status==='wrapping'||!p.status)?`<button class="chip soon nodeliv" type="button" data-setup="${esc(p.id)}" title="What will this project produce? Click to suggest a framework.">no deliverable</button>`:''}<button class="mini" data-pedit="${esc(p.id)}" type="button">Edit</button></div></div>
         ${p.goal?`<p class="goal">${esc(p.goal)}</p>`:''}
         ${bar}
         ${po.length?`<details><summary class="label" style="cursor:pointer;margin:4px 0">${po.length} open task${po.length>1?'s':''}</summary><ul class="list" style="margin-top:6px">${po.map(i=>row(i,false, stageOf(i)!=='todo'?`<span class="chip ${stageOf(i)==='review'?'next':''}">${stageOf(i)==='doing'?'in progress':'review'}</span>`:'')).join('')}</ul></details>`:'<p class="empty" style="font-size:.84rem">No open tasks yet.</p>'}
@@ -495,10 +1412,10 @@ details.done li{text-decoration:line-through;opacity:.8}
 
   function card(it){
     const st=stageOf(it), i=STAGE_IDS.indexOf(st);
-    return `<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}">
-      <div class="card-txt">${esc(it.text)}</div>
+    return `<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}" data-drop="items:${esc(it.id)}">
+      <div class="card-txt" data-open="${esc(it.id)}" title="Open details and files">${esc(it.text)}</div>${fileChips(it)}
       <div class="card-foot">
-        ${filter==='all'?tag(it.project):''}
+        ${(cardTags??filter==='all')?tag(it.project):''}
         ${dueChip(it.due)}
         ${staleInfo(it)!==null?`<span class="chip soon" title="No changes in ${staleInfo(it)} days">idle ${staleInfo(it)}d</span>`:''}
         <span class="card-nav">
@@ -510,7 +1427,7 @@ details.done li{text-decoration:line-through;opacity:.8}
   }
 
   function renderBoard(){
-    $('filters').innerHTML=filterChips();
+    $('filters').innerHTML=filterChips()+boardPageLink();
 
     const pool=items.filter(i=>filter==='all'||i.project===filter);
     const by={todo:[],doing:[],review:[],done:[]};
@@ -547,6 +1464,14 @@ details.done li{text-decoration:line-through;opacity:.8}
   async function addItem(text, project, stage){
     const doc={text, project, status:stage==='done'?'done':'open', stage, kind:'task', created:new Date().toISOString()};
     if(stage==='done') doc.done_at=doc.created;
+    if(project==='auto'){
+      const c=await confirmFiling(text); if(!c) return null;
+      let first=null; const ids=[];
+      for(const d of c.docs){ const r=await db.collection('items').add({...doc, ...d}); first=first||r; ids.push(r.id); }
+      if(c.newProject) startProjectFor(c.newProject, ids);
+      if(ids.length>1) first={...first, notice:`Filed ${ids.length} tasks under ${pName(first.project)}.`};
+      return first;
+    }
     return await db.collection('items').add(doc);
   }
 
@@ -561,22 +1486,27 @@ details.done li{text-decoration:line-through;opacity:.8}
     return f;
   }
 
-  function render(){ const al=computeAlerts(); renderStats(al); renderAlerts(al); renderDesk(); if(view==='board') renderBoard(); if(view==='tl') renderTimeline(); }
+  function render(){ const al=computeAlerts(); renderStats(al); renderAlerts(al); renderDesk(); if(view==='board') renderBoard(); if(view==='tl') renderTimeline(); if(view==='proj') renderPage(); refreshTaskDlg(); }
 
   async function moveTo(id, stage){
     if(!db || !STAGE_IDS.includes(stage)) return;
     const now=new Date().toISOString();
     const patch = stage==='done' ? {stage:'done', status:'done', done_at:now, updated:now} : {stage, status:'open', done_at:null, updated:now};
-    try{ await db.doc('items/'+id).update(patch); }
+    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update(patch); if(stage==='done' && was && was.status!=='done') celebrate(was); }
     catch(err){ $('cap-status').textContent='Could not move that card. Try again in a moment.'; }
   }
 
   function setView(v){
+    const was=view; if(v!=='proj') lastView=v;
     view=v;
     [['desk','view-desk','desk-view'],['board','view-board','board-view'],['tl','view-tl','tl-view']].forEach(([k,b,s])=>{
       $(b).setAttribute('aria-pressed', v===k); $(s).hidden = v!==k;
     });
-    try{ localStorage.setItem('wd-view', v); }catch(e){}
+    $('proj-view').hidden = v!=='proj';
+    if(v!=='proj' && was==='proj' && location.hash) history.replaceState(null,'',location.pathname+location.search);
+    if(v!=='proj') try{ localStorage.setItem('wd-view', v); }catch(e){}
+    if(v==='proj') renderPage();
     if(v==='board') renderBoard();
     if(v==='tl') renderTimeline();
   }
@@ -602,7 +1532,8 @@ details.done li{text-decoration:line-through;opacity:.8}
     if(e.target?.type!=='checkbox' || !e.target.dataset.id) return;
     const id=e.target.dataset.id; if(!id||!db) return;
     e.target.disabled=true;
-    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); }
+    const was=items.find(i=>i.id===id);
+    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); if(was) celebrate(was); }
     catch(err){ e.target.checked=false; e.target.disabled=false; $('cap-status').textContent='Could not save that change. Try again in a moment.'; }
   });
 
@@ -636,9 +1567,9 @@ details.done li{text-decoration:line-through;opacity:.8}
     if(!db){ $('cap-status').textContent='Saving is not available in this view.'; return; }
     $('cap-btn').disabled=true;
     try{
-      $('cap-status').textContent= $('cap-proj').value==='auto' ? 'Filing…' : '';
-      const r=await db.collection('items').add({text, project:$('cap-proj').value, status:'open', stage:'todo', kind:'task', created:new Date().toISOString()});
-      $('cap-text').value=''; flash('cap-status', filedMsg(r));
+      $('cap-status').textContent= $('cap-proj').value==='auto' ? 'Reading the note…' : 'Saving…';
+      const r=await addItem(text, $('cap-proj').value, 'todo');
+      if(r){ $('cap-text').value=''; flash('cap-status', filedMsg(r)); } else $('cap-status').textContent='';
     }catch(err){ $('cap-status').textContent='Could not add the note: '+err.message; }
     $('cap-btn').disabled=false;
   });
@@ -651,9 +1582,9 @@ details.done li{text-decoration:line-through;opacity:.8}
     if(!db){ $('bcap-status').textContent='Saving is not available in this view.'; return; }
     $('bcap-btn').disabled=true;
     try{
-      $('bcap-status').textContent= $('bcap-proj').value==='auto' ? 'Filing…' : '';
+      $('bcap-status').textContent= $('bcap-proj').value==='auto' ? 'Reading the note…' : 'Saving…';
       const r=await addItem(text, $('bcap-proj').value, 'todo');
-      $('bcap-text').value=''; flash('bcap-status', filedMsg(r));
+      if(r){ $('bcap-text').value=''; flash('bcap-status', filedMsg(r)); } else $('bcap-status').textContent='';
     }catch(err){ $('bcap-status').textContent='Could not add the note: '+err.message; }
     $('bcap-btn').disabled=false; $('bcap-text').focus();
   });
@@ -683,7 +1614,7 @@ details.done li{text-decoration:line-through;opacity:.8}
     const stage=e.target.dataset.stage;
     const project = filter!=='all' ? filter : ($('lane-proj')?.value || 'auto');
     draftProj=project;
-    try{ draft=''; const r=await addItem(text, project, stage); renderBoard(); if(project==='auto') flash('bcap-status', filedMsg(r)); }
+    try{ draft=''; const r=await addItem(text, project, stage); if(!r) draft=text; renderBoard(); if(r) flash('bcap-status', filedMsg(r)); }
     catch(err){ draft=text; $('bcap-status').textContent='Could not add the card. Try again in a moment.'; renderBoard(); }
   });
 
@@ -704,6 +1635,7 @@ details.done li{text-decoration:line-through;opacity:.8}
       if(!(p.status==='active'||p.status==='wrapping') || snoozed(p)) continue;
       const pi=items.filter(i=>i.project===p.id), po=pi.filter(i=>i.status!=='done');
       if(!pi.length){ empties.push(p); continue; }
+      if(!po.length){ out.push({lv:'info',type:'project',id:p.id,proj:p.id,title:p.name,detail:'Every task is done. Close it out?',closeout:true}); continue; }
       const idle=idleDays(Math.max(ts(p.touched),...pi.map(touched)));
       if(idle>=(p.stale_days||STALE.project)) out.push({lv:'soon',type:'project',id:p.id,proj:p.id,title:p.name,detail:`No activity on this project for ${idle} days`});
       if(p.deadline){
@@ -714,6 +1646,10 @@ details.done li{text-decoration:line-through;opacity:.8}
           if(un && dl<=30) out.push({lv:dl<=14?'late':'soon',type:'project',id:p.id,proj:p.id,title:p.name,detail:`${un} open task${un>1?'s have':' has'} no due date, and the deadline is in ${dl} days`,plan:true});
         }
       }
+    }
+    for(const p of ordered()){
+      if(!(p.status==='active'||p.status==='wrapping'||!p.status) || snoozed(p) || (p.deliverable||'').trim()) continue;
+      out.push({lv:'info',type:'project',id:p.id,proj:p.id,title:p.name,detail:'No deliverable yet: what will this project produce?',setup:true});
     }
     if(empties.length) out.push({lv:'info',type:'group',ids:empties.map(p=>p.id),proj:empties[0].id,title:`${empties.length} project${empties.length>1?'s have':' has'} no tasks yet`,detail:empties.map(p=>p.name).join(', ')});
     return out.sort((a,b)=>rank[a.lv]-rank[b.lv]);
@@ -729,6 +1665,8 @@ details.done li{text-decoration:line-through;opacity:.8}
       <span class="alert-detail">${esc(a.detail)}</span>
       <div class="alert-actions">${a.type!=='group'?tag(a.proj):''}
         ${a.plan?`<button class="mini primary" data-act="plan" data-k="${k}">Plan dates</button>`:''}
+        ${a.setup?`<button class="mini primary" data-act="setup" data-k="${k}">Suggest a framework</button>`:''}
+        ${a.closeout?`<button class="mini primary" data-act="closeout" data-k="${k}">Close out</button>`:''}
         <button class="mini" data-act="open" data-k="${k}">${a.type==='group'?'Add tasks':'Open on board'}</button>
         <button class="mini" data-act="snooze" data-k="${k}">Snooze 3 days</button>
       </div></div></li>`).join('') + (list.length>8?`<li class="empty" style="padding-top:8px">+ ${list.length-8} more after these are handled</li>`:'');
@@ -737,6 +1675,8 @@ details.done li{text-decoration:line-through;opacity:.8}
   $('attn-list').addEventListener('click', async e=>{
     const b=e.target.closest('[data-act]'); if(!b) return;
     const a=currentAlerts[+b.dataset.k]; if(!a) return;
+    if(b.dataset.act==='setup'){ openFramework(a.id); return; }
+    if(b.dataset.act==='closeout'){ openCloseout(a.id); return; }
     if(b.dataset.act==='open'){ filter=a.proj; saveFilter(); setView('board'); window.scrollTo({top:0,behavior:'smooth'}); return; }
     if(b.dataset.act==='plan'){ filter=a.proj; saveFilter(); selected=a.type==='task'?a.id:null; confirmPlan=null; setView('tl'); window.scrollTo({top:0,behavior:'smooth'}); return; }
     if(b.dataset.act==='snooze'){
@@ -825,7 +1765,7 @@ details.done li{text-decoration:line-through;opacity:.8}
       <div class="field"><label for="ed-start">Start</label><input type="date" id="ed-start" value="${esc(it.start||'')}"></div>
       <div class="field"><label for="ed-due">Due</label><input type="date" id="ed-due" value="${esc(it.due||'')}"></div>
       <div class="field"><label for="ed-stage">Stage</label><select id="ed-stage">${STAGES.map(s=>`<option value="${s.id}" ${stageOf(it)===s.id?'selected':''}>${s.label}</option>`).join('')}</select></div>
-      <div class="compose-row"><button class="ghost" data-clear>Clear dates</button><button class="ghost" data-x>Close</button></div>
+      <div class="compose-row"><button class="ghost" data-open="${esc(it.id)}">Details &amp; files</button><button class="ghost" data-clear>Clear dates</button><button class="ghost" data-x>Close</button></div>
     </div>${bad?'<p class="warn">The start date is after the due date.</p>':''}${late?`<p class="warn">This is due after the project deadline (${fmt(p.deadline)}).</p>`:''}`;
   }
 
@@ -913,25 +1853,157 @@ details.done li{text-decoration:line-through;opacity:.8}
   function filedMsg(r){
     if(!r) return 'Added.';
     if(r.notice) return r.notice;
+    if(r.also?.length) return `Filed ${r.also.length+1} tasks under ${pName(r.project)}.`;
     return `Filed under ${pName(r.project)}${r.due?` · due ${fmt(r.due)}`:''}: “${r.text}”`;
   }
   function flash(id,msg){ $(id).textContent=msg; setTimeout(()=>{ if($(id).textContent===msg) $(id).textContent=''; },7000); }
 
-  let aiOn=false;
+  // aiOn: some AI can file notes. chatOn: a chat model, which the brief needs (Jev alone can't write one).
+  let aiOn=false, chatOn=false, keysOpen=false, projectsRoot='~/Documents/Projects/Repos', editorName='Visual Studio Code';
   async function loadStatus(){
     try{
-      const s=await db.call('GET','/api/status'); aiOn=!!s.ai;
-      $('ai-setup').hidden=aiOn; $('brief-btn').disabled=!aiOn;
-      $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'');
-      if(!aiOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Connect DeepSeek above to get a daily brief.</p>';
+      const s=await db.call('GET','/api/status'); aiOn=!!s.ai; chatOn=!!s.chat; projectsRoot=s.projects_root||projectsRoot; editorName=s.editor||editorName; projectKinds=s.kinds||projectKinds;
+      $('ai-setup').hidden=aiOn && !keysOpen; $('ai-close').hidden=!aiOn; $('brief-btn').disabled=!chatOn;
+      $('chat-now').innerHTML=s.chat?`Using ${esc(s.chat)}. <button class="linkish" type="button" data-forget="chat">Remove</button>`:'No key yet.';
+      $('jev-now').innerHTML=s.jev?'On. <button class="linkish" type="button" data-forget="jev">Remove</button>':'Not set.';
+      if(document.activeElement!==$('hours-in')) $('hours-in').value=s.hours_per_day||4;
+      $('foot').innerHTML=`Saved to <code>${esc(s.data_file||'')}</code>`+(s.data_error?`<span class="warn"> · ${esc(s.data_error)}. Showing the last good copy.</span>`:'')
+        +` · <button class="linkish" type="button" data-ai-open>AI keys</button> · <button class="linkish" type="button" data-sound>${soundOn()?'Sound on':'Sound off'}</button>`;
+      if(!chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Add an API key under AI keys to get a daily brief.</p>';
     }catch(_){}
   }
-  $('key-form').addEventListener('submit', async e=>{
+  // Chat keys are matched to their service; the Jev box saves the key as Jev's (after TypeSafe accepts it).
+  $('ai-setup').addEventListener('submit', async e=>{
+    const f=e.target.closest('.key-form'); if(!f) return;
     e.preventDefault();
-    const key=$('ai-key').value.trim(); if(!key) return;
-    try{ await db.call('POST','/api/settings',{key}); $('ai-key').value=''; $('key-status').textContent='Saved.'; await loadStatus();
-      if(aiOn) $('brief-out').innerHTML='<p class="empty">Ask DeepSeek what to focus on today.</p>'; }
-    catch(err){ $('key-status').textContent='Could not save the key: '+err.message; }
+    const input=f.querySelector('input'), key=input.value.trim(); if(!key) return;
+    keysOpen=true; $('key-status').textContent='Checking the key…';
+    try{
+      const r=await db.call('POST','/api/settings', f.dataset.kind==='jev'?{key, provider:'jev'}:{key});
+      input.value=''; $('key-status').textContent=r.message||'Saved.'; await loadStatus();
+      if(chatOn && !$('brief-out').querySelector('.brief-head')) $('brief-out').innerHTML='<p class="empty">Ask Work Desk what to focus on today.</p>';
+    }catch(err){ $('key-status').textContent=err.message; }
+  });
+  $('hours-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    try{ await db.call('POST','/api/settings',{hours_per_day:parseFloat($('hours-in').value)}); $('key-status').textContent='Saved. The brief plans around that.'; }
+    catch(err){ $('key-status').textContent=err.message; }
+  });
+  document.addEventListener('click', async e=>{
+    if(e.target.closest('[data-ai-open]')){
+      if(view!=='desk') setView('desk');
+      keysOpen=true; $('ai-setup').hidden=false; $('ai-setup').scrollIntoView({block:'start', behavior:'smooth'});
+      setTimeout(()=>(chatOn?$('jev-key'):$('ai-key')).focus({preventScroll:true}),300); return;
+    }
+    if(e.target.closest('#ai-close')){ keysOpen=false; $('key-status').textContent=''; loadStatus(); return; }
+    const su=e.target.closest('[data-setup]');
+    if(su){ openFramework(su.dataset.setup); return; }
+    const snd=e.target.closest('[data-sound]');
+    if(snd){ setSound(!soundOn()); snd.textContent=soundOn()?'Sound on':'Sound off'; if(soundOn()) chime(false); return; }
+    const fg=e.target.closest('[data-forget]');
+    if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
+      catch(err){ $('key-status').textContent=err.message; } }
+  });
+
+  // ---- "Sort it for me": suggest, then confirm ----
+  // Nothing is saved until you press File. The dialog also works with no AI: pick the project yourself.
+  let fdSug=null, fdNote='', fdResolve=null;
+  const goLabel=(pid,n=1)=>{ const what=n>1?`${n} tasks`:''; return pid==='inbox'?`Put ${what||'it'} in the Inbox`:`File ${what?what+' ':''}under ${pName(pid)}`; };
+  const fdCount=()=>$('file-dlg').querySelectorAll('.fd-task').length||1;
+  async function confirmFiling(text){
+    let s;
+    try{ s=await db.call('POST','/api/suggest',{text}); }
+    catch(err){ s={project:'inbox', text, due:null, error:err.message}; }
+    const r=await askWhere(s, text); if(!r) return null;
+    const docs=r.tasks.map(t=>{
+      const doc={text:t.text, project:r.project, tidy:false};
+      if(t.text!==text) doc.original=text;
+      if(t.due) doc.due=t.due;
+      if(r.project==='inbox' && s.triage) doc.triage=s.triage;
+      return doc;
+    });
+    return {docs, newProject:r.newProject||null};
+  }
+  function askWhere(s, note){
+    fdSug=s; fdNote=note;
+    const d=$('file-dlg'), t=s.triage;
+    const tasks=(s.tasks&&s.tasks.length)?s.tasks:[{text:note, due:null}];
+    const dup=s.duplicate?`<p class="warn" style="margin:0">This may already be a task: “${esc(s.duplicate.text)}” <span class="triage-by" title="Jev's estimate">Jev ${Math.round(s.duplicate.p*100)}%</span></p>`:'';
+    const fields=tasks.length===1
+      ? `<textarea id="fd-text" class="td-title" rows="2" aria-label="Task">${esc(tasks[0].text)}</textarea>`
+      : `<p class="fd-why">Work Desk split this into ${tasks.length} tasks. Edit or remove any of them.</p>
+         <ul class="fd-tasks">${tasks.map((x,i)=>`<li class="fd-task" data-i="${i}"><textarea rows="2" aria-label="Task ${i+1}">${esc(x.text)}</textarea><input type="date" aria-label="Due" value="${esc(x.due||'')}"><button type="button" class="icon-btn" data-fdrm aria-label="Remove this task">${ICON.x}</button></li>`).join('')}</ul>`;
+    const why= s.error?`<p class="warn" style="margin:0">${esc(s.error)} Choose a project yourself.</p>`
+      : t?`<p class="fd-why">${esc(t.reason)}${t.by==='jev'?'<span class="triage-by" title="Jev made this call">Jev</span>':''}</p>`
+      : `<p class="fd-why">Work Desk suggests <b>${esc(pName(s.project))}</b>.${s.warning?` ${esc(s.warning)}`:''}</p>`;
+    d.innerHTML=`<form class="td-body" id="fd-form">
+      <div class="td-head"><h3 class="sec-h">Where does this go?</h3><button type="button" class="icon-btn close" data-fdcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${why}
+      ${dup}
+      ${fields}
+      ${tasks.length>1||tasks[0].text!==note?`<details class="fd-orig"><summary>Your note as typed</summary><p>${esc(note)}</p></details>`:''}
+      <div class="ed-grid td-fields">
+        <div class="field"><label for="fd-proj">Project</label><select id="fd-proj"><option value="inbox">Inbox</option>${ordered().map(p=>`<option value="${esc(p.id)}" ${p.id===s.project?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
+        ${tasks.length===1?`<div class="field"><label for="fd-due">Due</label><input type="date" id="fd-due" value="${esc(tasks[0].due||'')}"></div>`:''}
+      </div>
+      ${t?.suggest?`<div><button type="button" class="mini" data-fdnew>New project: “${esc(t.suggest)}”</button></div>`:''}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-fdcancel>Cancel</button><button type="submit" class="btn" id="fd-go">${esc(goLabel(s.project, tasks.length))}</button></div>
+    </form>`;
+    d.showModal(); setTimeout(()=>$('fd-go')?.focus(),0);
+    return new Promise(res=>{ fdResolve=res; });
+  }
+  function finishFiling(extra){
+    const d=$('file-dlg'), rows=[...d.querySelectorAll('.fd-task')];
+    const tasks=rows.length
+      ? rows.map(r=>({text:r.querySelector('textarea').value.trim(), due:r.querySelector('input').value||null})).filter(t=>t.text)
+      : [{text:$('fd-text').value.trim()||fdNote, due:$('fd-due').value||null}];
+    if(!tasks.length) return;
+    const res=fdResolve; fdResolve=null;
+    const project=$('fd-proj').value;
+    d.close();
+    res?.({tasks, project, ...extra});
+  }
+  // Start the project an Inbox note suggested, moving every note that suggested the same name.
+  function startProjectFor(name, newIds){
+    if(view!=='desk') setView('desk');
+    const key=name.toLowerCase();
+    const ids=items.filter(i=>i.project==='inbox' && i.status!=='done' && (i.triage?.suggest||'').toLowerCase()===key).map(i=>i.id);
+    for(const id of newIds) if(!ids.includes(id)) ids.push(id);
+    newProjectFrom(name, ids);
+  }
+  const fdlg=$('file-dlg');
+  fdlg.addEventListener('submit', e=>{ e.preventDefault(); finishFiling({}); });
+  fdlg.addEventListener('click', e=>{
+    if(e.target===fdlg || e.target.closest('[data-fdcancel]')){ fdlg.close(); return; }
+    if(e.target.closest('[data-fdnew]')){ $('fd-proj').value='inbox'; finishFiling({newProject:fdSug.triage.suggest}); return; }
+    const rm=e.target.closest('[data-fdrm]');
+    if(rm && fdCount()>1){ rm.closest('.fd-task').remove(); $('fd-go').textContent=goLabel($('fd-proj').value, fdCount()); }
+  });
+  fdlg.addEventListener('change', e=>{ if(e.target.id==='fd-proj') $('fd-go').textContent=goLabel(e.target.value, fdCount()); });
+  fdlg.addEventListener('keydown', e=>{ if(e.target.id==='fd-text' && e.key==='Enter' && !e.shiftKey){ e.preventDefault(); fdlg.querySelector('form').requestSubmit(); } });
+  fdlg.addEventListener('close', ()=>{ if(fdResolve){ const res=fdResolve; fdResolve=null; res(null); } });
+
+  // ---- Inbox: notes that didn't clearly fit a project ----
+  function inboxRow(it){
+    const t=it.triage, base=row(it,false);
+    if(!t||!t.reason) return base;
+    const close=t.closest&&projOf(t.closest);
+    const acts=(t.suggest?`<button class="mini primary" type="button" data-tnew="${esc(it.id)}">Create “${esc(t.suggest)}”</button>`:`<button class="mini" type="button" data-tnew="${esc(it.id)}">New project…</button>`)
+      +(close?`<button class="mini" type="button" data-tfile="${esc(it.id)}" data-to="${esc(close.id)}">File under ${esc(close.name)}</button>`:'');
+    return base.replace(/<\/li>$/, `<div class="triage"><p class="triage-why">${esc(t.reason)}${t.by==='jev'?'<span class="triage-by" title="Jev made this call">Jev</span>':''}</p><div class="triage-acts">${acts}</div></div></li>`);
+  }
+  document.addEventListener('click', async e=>{
+    const n=e.target.closest('[data-tnew]');
+    if(n){
+      const it=items.find(i=>i.id===n.dataset.tnew); if(!it) return;
+      const name=it.triage?.suggest||'', key=name.toLowerCase();
+      // every waiting note with the same suggestion moves into the new project
+      const ids=key?items.filter(i=>i.project==='inbox' && i.status!=='done' && (i.triage?.suggest||'').toLowerCase()===key).map(i=>i.id):[it.id];
+      newProjectFrom(name, ids); return;
+    }
+    const f=e.target.closest('[data-tfile]');
+    if(f){ try{ await db.doc('items/'+f.dataset.tfile).update({project:f.dataset.to}); toast(`Filed under ${pName(f.dataset.to)}.`); }
+      catch(err){ toast('Could not move the note: '+err.message, true); } }
   });
 
   function renderBrief(v, when){
@@ -942,8 +2014,9 @@ details.done li{text-decoration:line-through;opacity:.8}
     if(v.watch?.length) h+=`<p class="label">Watch out</p><ul class="brief-list">${li(v.watch)}</ul>`;
     if(v.quick_wins?.length) h+=`<p class="label">Quick wins</p><ul class="brief-list">${li(v.quick_wins)}</ul>`;
     if(v.first_step) h+=`<p class="brief-start"><b>Start here:</b> ${esc(v.first_step)}</p>`;
+    if(v.note) h+=`<p class="brief-meta">${esc(v.note)}</p>`;
     if(when) h+=`<p class="brief-meta">Brief from ${esc(when)}</p>`;
-    $('brief-out').innerHTML=h||'<p class="empty">DeepSeek sent an empty brief. Try again.</p>';
+    $('brief-out').innerHTML=h||'<p class="empty">The brief came back empty. Try again.</p>';
   }
   function showCachedBrief(){
     try{ const c=JSON.parse(localStorage.getItem('wd-brief')||'null'); if(c && c.day===TODAY_ISO) renderBrief(c.v, c.at); }catch(_){}
@@ -956,12 +2029,12 @@ details.done li{text-decoration:line-through;opacity:.8}
       renderBrief(v, at);
       try{ localStorage.setItem('wd-brief', JSON.stringify({day:TODAY_ISO, at, v})); }catch(_){}
     }catch(err){ $('brief-out').innerHTML=`<p class="warn">${esc(err.message)}</p>`; }
-    b.disabled=!aiOn; b.textContent='Brief me';
+    b.disabled=!chatOn; b.textContent='Brief me';
   });
 
   document.addEventListener('click', async e=>{
     const sb=e.target.closest('#sort-inbox'); if(!sb) return;
-    if(!aiOn){ $('cap-status').textContent='Connect DeepSeek first to sort the Inbox.'; return; }
+    if(!aiOn){ $('cap-status').textContent='Add an API key under AI keys to sort the Inbox.'; return; }
     sb.disabled=true; sb.textContent='Sorting…';
     try{ const r=await db.call('POST','/api/sort-inbox',{}); await db.refreshAll();
       flash('cap-status', `Filed ${r.moved} note${r.moved===1?'':'s'}. ${r.left} left in the Inbox.${r.error?' '+r.error:''}`); }
@@ -969,47 +2042,66 @@ details.done li{text-decoration:line-through;opacity:.8}
   });
 
   // ---- project editing ----
-  let editingProj=null, projDraft={};
+  let editingProj=null, projDraft={}, projMove=[];
   function projForm(p){
     const d={...p,...projDraft};
     const opt=(list,cur)=>list.map(t=>`<option value="${t}" ${cur===t?'selected':''}>${t}</option>`).join('');
     return `<form class="proj proj-form" id="proj-form" data-id="${esc(p.id||'')}" style="--h:${p.id?hue(p.id):240}">
       <div class="field"><label for="pf-name">Name</label><input id="pf-name" name="name" value="${esc(d.name||'')}" required></div>
       <div class="field"><label for="pf-goal">Goal</label><textarea id="pf-goal" name="goal" rows="2">${esc(d.goal||'')}</textarea></div>
+      <div class="field"><label for="pf-deliv">Deliverable (the one thing it produces)</label><input id="pf-deliv" name="deliverable" value="${esc(d.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology"></div>
       <div class="pf-row">
         <div class="field"><label for="pf-deadline">Deadline</label><input type="date" id="pf-deadline" name="deadline" value="${esc(d.deadline||'')}"></div>
         <div class="field"><label for="pf-tier">Tier</label><select id="pf-tier" name="tier">${opt(['major','standard'],d.tier||'standard')}</select></div>
         <div class="field"><label for="pf-status">Status</label><select id="pf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
       </div>
       <div class="field"><label for="pf-context">Notes (repo, people, links)</label><input id="pf-context" name="context" value="${esc(d.context||'')}"></div>
+      ${p.id?'':`<label class="pf-check"><input type="checkbox" name="plan" ${d.plan===false||!chatOn?'':'checked'} ${chatOn?'':'disabled title="Needs a chat model key (AI keys)"'}> Suggest a framework: kind of project, deliverable and milestones</label>
+      <label class="pf-check"><input type="checkbox" name="make_folder" ${d.make_folder===false?'':'checked'}> Create a project folder with a git repo in <code>${esc(projectsRoot)}</code></label>`}
+      ${!p.id&&projMove.length?`<p class="hint" style="margin:0">${projMove.length===1?'The Inbox note':`The ${projMove.length} Inbox notes`} that suggested it will move into the new project.</p>`:''}
       <div class="compose-row"><button class="btn" type="submit">${p.id?'Save':'Add project'}</button><button class="ghost" type="button" data-pcancel>Cancel</button></div>
     </form>`;
   }
-  function openProjForm(id){ editingProj=id; projDraft={}; renderDesk(); setTimeout(()=>$('pf-name')?.focus(),0); }
+  function openProjForm(id){ editingProj=id; projDraft={}; projMove=[]; renderDesk(); setTimeout(()=>$('pf-name')?.focus(),0); }
+  function newProjectFrom(name, ids){
+    editingProj='new'; projDraft={name}; projMove=ids; renderDesk();
+    setTimeout(()=>{ const f=$('proj-form'); f?.scrollIntoView({block:'nearest'}); $(name?'pf-goal':'pf-name')?.focus(); },0);
+  }
   $('new-proj').addEventListener('click',()=>openProjForm('new'));
   $('projects').addEventListener('click', e=>{
     const ed=e.target.closest('[data-pedit]'); if(ed){ openProjForm(ed.dataset.pedit); return; }
-    if(e.target.closest('[data-pcancel]')){ editingProj=null; projDraft={}; renderDesk(); }
+    if(e.target.closest('[data-pcancel]')){ editingProj=null; projDraft={}; projMove=[]; renderDesk(); }
   });
-  $('projects').addEventListener('input', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=e.target.value; });
-  $('projects').addEventListener('change', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=e.target.value; });
+  const draftVal=t=>t.type==='checkbox'?t.checked:t.value;
+  $('projects').addEventListener('input', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=draftVal(e.target); });
+  $('projects').addEventListener('change', e=>{ if(e.target.name && e.target.closest('#proj-form')) projDraft[e.target.name]=draftVal(e.target); });
   $('projects').addEventListener('submit', async e=>{
     if(e.target.id!=='proj-form') return;
     e.preventDefault();
     const f=new FormData(e.target), data={};
-    for(const k of ['name','goal','deadline','tier','status','context']) data[k]=(f.get(k)||'').toString().trim();
+    for(const k of ['name','goal','deliverable','deadline','tier','status','context']) data[k]=(f.get(k)||'').toString().trim();
     if(!data.name) return;
     const id=e.target.dataset.id;
     try{
       if(id) await db.doc('projects/'+id).update(data);
-      else await db.collection('projects').add({...data, order:Math.max(0,...projects.map(p=>p.order||0))+1});
-      editingProj=null; projDraft={}; renderDesk();
+      else{
+        const body={...data, order:Math.max(0,...projects.map(p=>p.order||0))+1, make_folder:f.get('make_folder')==='on', move:projMove};
+        if(f.get('plan')==='on'){
+          const fw=await askFramework({name:data.name, deadline:data.deadline, deliverable:data.deliverable, wantFolder:body.make_folder}, {project:data});
+          if(!fw) return; // cancelled: the form stays as it was
+          Object.assign(body, {type:fw.type, role:fw.role, deliverable:fw.deliverable, deadline:fw.deadline||data.deadline, summary:fw.summary, milestones:fw.milestones, make_folder:fw.make_folder});
+        }
+        const r=await db.collection('projects').add(body);
+        if(projMove.length||body.milestones?.length) await db.refreshAll();
+        if(r?.notice) toast(r.notice, /^Couldn|^Didn|couldn/.test(r.notice));
+      }
+      editingProj=null; projDraft={}; projMove=[]; renderDesk();
     }catch(err){ $('cap-status').textContent='Could not save the project: '+err.message; }
   });
 
   render();
   (async()=>{
-    db = makeLocalDb(); loadStatus(); showCachedBrief();
+    db = makeLocalDb(); loadStatus(); showCachedBrief(); route();
     const snap=s=>s.docs.map(d=>({id:d.id,...d.data()}));
     db.collection('projects').onSnapshot(s=>{projects=snap(s);render();}, ()=>{});
     db.collection('items').onSnapshot(s=>{items=snap(s);render();}, ()=>{});

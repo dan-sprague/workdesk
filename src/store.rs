@@ -85,6 +85,19 @@ fn parse_file(text: &str) -> Result<Colls> {
     Ok(colls)
 }
 
+fn apply(doc: &mut Map<String, Value>, patch: &Map<String, Value>) {
+    for (k, v) in patch {
+        if k == "id" {
+            continue;
+        }
+        if v.is_null() {
+            doc.remove(k);
+        } else {
+            doc.insert(k.clone(), v.clone());
+        }
+    }
+}
+
 /// Latest timestamp on a document, used to decide which copy is newer.
 pub fn doc_time(m: &Map<String, Value>) -> i64 {
     ["updated", "done_at", "created"]
@@ -242,20 +255,39 @@ impl Store {
         self.save(&mut inner)
     }
 
-    /// Shallow-merge `patch` into an existing document. Returns None if it doesn't exist.
+    /// Shallow-merge `patch` into an existing document; a null value removes that field.
+    /// Returns None if the document doesn't exist.
     pub fn merge(&self, coll: &str, id: &str, patch: &Map<String, Value>) -> Result<Option<Map<String, Value>>> {
         check_collection(coll)?;
         let mut inner = self.inner.lock().unwrap();
         self.refresh(&mut inner);
         let Some(Value::Object(doc)) = inner.colls.get_mut(coll).unwrap().get_mut(id) else { return Ok(None) };
-        for (k, v) in patch {
-            if k != "id" {
-                doc.insert(k.clone(), v.clone());
-            }
-        }
+        apply(doc, patch);
         let out = doc.clone();
         self.save(&mut inner)?;
         Ok(Some(out))
+    }
+
+    /// `merge` for several documents, saving the file once. Missing documents are skipped.
+    pub fn merge_many(&self, coll: &str, patches: &[(String, Map<String, Value>)]) -> Result<usize> {
+        check_collection(coll)?;
+        if patches.is_empty() {
+            return Ok(0);
+        }
+        let mut inner = self.inner.lock().unwrap();
+        self.refresh(&mut inner);
+        let docs = inner.colls.get_mut(coll).unwrap();
+        let mut n = 0;
+        for (id, patch) in patches {
+            if let Some(Value::Object(doc)) = docs.get_mut(id) {
+                apply(doc, patch);
+                n += 1;
+            }
+        }
+        if n > 0 {
+            self.save(&mut inner)?;
+        }
+        Ok(n)
     }
 
     pub fn delete(&self, coll: &str, id: &str) -> Result<bool> {
@@ -269,6 +301,7 @@ impl Store {
         Ok(found)
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         let mut inner = self.inner.lock().unwrap();
         self.refresh(&mut inner);
@@ -371,7 +404,9 @@ mod tests {
         let s = Store::open(&f, Some(d.join("backups"))).unwrap();
         assert!(s.is_empty());
         s.put("items", "t1", &doc(json!({"text":"a","updated":"2026-10-01T00:00:00Z"}))).unwrap();
-        s.merge("items", "t1", &doc(json!({"stage":"doing"}))).unwrap();
+        s.merge("items", "t1", &doc(json!({"stage":"doing","triage":{"reason":"x"}}))).unwrap();
+        s.merge("items", "t1", &doc(json!({"triage":null}))).unwrap();
+        assert!(s.get("items", "t1").unwrap().unwrap().get("triage").is_none());
         // reopen from disk
         let s2 = Store::open(&f, None).unwrap();
         assert_eq!(s2.get("items", "t1").unwrap().unwrap()["stage"], "doing");
