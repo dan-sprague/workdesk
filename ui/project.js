@@ -204,9 +204,10 @@
 
     const head = pageEdit ? pageForm(p) : `
       <div class="pp-title"><span class="swatch"></span><h2>${esc(p.name)}</h2>
-        <div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dlChip}${p.deliverable?'<button class="mini" type="button" data-pp-framework title="Kind, deliverable and milestones">Framework…</button>':''}<button class="mini" type="button" data-pp-edit>Edit</button></div></div>
+        <div class="meta"><span class="pill ${p.tier==='major'?'major':''}">${esc(p.tier||'standard')}</span>${p.status&&p.status!=='active'?`<span class="pill">${esc(p.status)}</span>`:''}${dlChip}${p.deliverable&&p.status!=='done'?'<button class="mini" type="button" data-pp-framework title="Kind, deliverable and milestones">Framework…</button>':''}<button class="mini" type="button" data-pp-edit>Edit</button>${p.status!=='done'?'<button class="mini" type="button" data-pp-close title="Wrap the project up">Close out…</button>':''}</div></div>
       ${p.goal?`<p class="pp-goal">${esc(p.goal)}</p>`:`<p class="empty">No goal yet. <button type="button" class="linkish" data-pp-edit>Add one</button></p>`}
-      ${p.deliverable?`<p class="pp-deliv"><span class="label">Deliverable</span> ${esc(p.deliverable)}</p>`:`<p class="pp-warn">No deliverable yet: what will this project produce? <button type="button" class="mini primary" data-pp-framework>Suggest a framework</button></p>`}
+      ${p.deliverable?`<p class="pp-deliv"><span class="label">Deliverable</span> ${esc(p.deliverable)}</p>`:p.status==='done'?'':`<p class="pp-warn">No deliverable yet: what will this project produce? <button type="button" class="mini primary" data-pp-framework>Suggest a framework</button></p>`}
+      ${p.status==='done'?closedBanner(p):''}
       <div class="pp-stats">${stat(open.length,'open')}${stat(by.doing.length,'in progress')}${stat(by.review.length,'in review')}${stat(by.done.length,'done')}${overdue?stat(overdue,'overdue','late'):''}${nextDue?stat(fmt(nextDue.due),'next due'):''}${p.deadline?stat(fmt(p.deadline),'deadline',dd!==null&&dd<=7?'late':''):''}</div>
       ${bar}`;
 
@@ -234,7 +235,7 @@
             ${p.summary?`<div class="pp-text">${fmtText(p.summary)}</div>`:`<p class="empty">What this project is, where it stands, what's left. <button type="button" class="linkish" data-pp-edit>Write an overview</button></p>`}</section>
         <section class="panel"><h3 class="sec-h">Details</h3>
             <dl class="pp-dl">
-              <dt>Kind</dt><dd>${esc(kindLabel(p.type))}</dd>
+              <dt>Kind</dt><dd>${esc(kindLabel(p.type))}${p.role==='contributor'?' · contributing a part':''}</dd>
               <dt>Deliverable</dt><dd>${p.deliverable?esc(p.deliverable):'<span class="warn">None yet.</span> <button type="button" class="linkish" data-pp-framework>Suggest a framework</button>'}</dd>
               <dt>Folder</dt><dd>${folder}</dd>
               <dt>Deadline</dt><dd>${p.deadline?`${new Date(p.deadline+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'long',day:'numeric',year:'numeric'})}`:'None set'}</dd>
@@ -276,6 +277,7 @@
       <div class="field"><label for="ppf-summary">Overview (blank line between paragraphs, "- " for bullets)</label><textarea id="ppf-summary" name="summary" rows="8">${esc(d.summary||'')}</textarea></div>
       <div class="pf-row">
         <div class="field"><label for="ppf-type">Kind</label><select id="ppf-type" name="type">${projectKinds.map(k=>`<option value="${k.id}" ${(d.type||'other')===k.id?'selected':''}>${esc(k.label)}</option>`).join('')}</select></div>
+        <div class="field"><label for="ppf-role">Your part</label><select id="ppf-role" name="role">${roleOpts(d.role)}</select></div>
         <div class="field"><label for="ppf-deadline">Deadline</label><input type="date" id="ppf-deadline" name="deadline" value="${esc(d.deadline||'')}"></div>
         <div class="field"><label for="ppf-tier">Tier</label><select id="ppf-tier" name="tier">${opt(['major','standard'],d.tier||'standard')}</select></div>
         <div class="field"><label for="ppf-status">Status</label><select id="ppf-status" name="status">${opt(['active','wrapping','waiting','done'],d.status||'active')}</select></div>
@@ -297,6 +299,12 @@
     const p=projOf(pageId); if(!p) return;
     if(e.target.closest('[data-pp-edit]')){ pageEdit=true; pageDraft={}; renderPage(); setTimeout(()=>$('ppf-name')?.focus(),0); return; }
     if(e.target.closest('[data-pp-framework]')){ openFramework(p.id); return; }
+    if(e.target.closest('[data-pp-close]')){ openCloseout(p.id); return; }
+    if(e.target.closest('[data-pp-reopen]')){
+      try{ await db.doc('projects/'+p.id).update({status:'active'}); toast(`${p.name} is open again. Its close-out record is kept.`); }
+      catch(err){ toast('Could not reopen it: '+err.message, true); }
+      return;
+    }
     const mk=e.target.closest('[data-pp-mkfolder]');
     if(mk){
       mk.disabled=true;
@@ -338,7 +346,7 @@
     if(e.target.id==='pp-form'){
       e.preventDefault();
       const f=new FormData(e.target), data={};
-      for(const k of ['name','goal','deliverable','type','summary','deadline','tier','status','folder','context']) data[k]=(f.get(k)||'').toString().trim();
+      for(const k of ['name','goal','deliverable','type','role','summary','deadline','tier','status','folder','context']) data[k]=(f.get(k)||'').toString().trim();
       if(!data.name) return;
       if(data.folder){ try{ const [s]=await db.call('POST','/api/stat',{paths:[data.folder]}); if(!s.exists||!s.dir){ toast(`There's no folder at ${data.folder}.`, true); return; } data.folder=s.path; }catch(_){} }
       try{ await db.doc('projects/'+p.id).update(data); pageEdit=false; pageDraft={}; renderPage(); }
@@ -349,6 +357,8 @@
   // ---- framework: kind, deliverable, deadline, overview, milestones and folder ----
   // Work Desk proposes (Jev picks the kind; the chat model writes the rest); nothing changes until Apply.
   let planResolve=null, planInfo=null;
+  const ROLES=[['lead','Leading it'],['contributor','Contributing a part']];
+  const roleOpts=cur=>ROLES.map(([v,l])=>`<option value="${v}" ${(cur||'lead')===v?'selected':''}>${l}</option>`).join('');
   const kindLabel=id=>(projectKinds.find(k=>k.id===(id||'other'))||{}).label||'Other';
   const folderList=kind=>((projectKinds.find(k=>k.id===kind)||projectKinds.find(k=>k.id==='other')||{}).folders||[]).join(' ');
   function slugOf(n){ let o=''; for(const ch of (n||'').trim().toLowerCase()){ if(/[a-z0-9]/.test(ch)) o+=ch; else if(o && !o.endsWith('-')) o+='-'; } return o.replace(/-+$/,'').slice(0,40).replace(/-+$/,''); }
@@ -372,6 +382,7 @@
       ${s.error?`<p class="warn" style="margin:0">${esc(s.error)} You can fill it in yourself.</p>`:'<p class="fd-why">Check it over and change anything. Nothing is saved until you press Apply.</p>'}
       <div class="ed-grid td-fields">
         <div class="field"><label for="pl-type">Kind of project ${s.type_by==='jev'&&s.type_p!=null?`<span class="triage-by" title="Jev's estimate">Jev ${Math.round(s.type_p*100)}%</span>`:''}</label><select id="pl-type">${opts}</select></div>
+        <div class="field"><label for="pl-role">Your part</label><select id="pl-role">${roleOpts(s.role||info.role)}</select></div>
         <div class="field"><label for="pl-deadline">Deadline</label><input type="date" id="pl-deadline" value="${esc(s.deadline||info.deadline||'')}"></div>
       </div>
       <div class="field"><label for="pl-deliv">Deliverable: the one thing this project produces</label><input id="pl-deliv" value="${esc(s.deliverable||info.deliverable||'')}" placeholder="e.g. Manuscript submitted to Genome Biology" required></div>
@@ -397,18 +408,84 @@
     e.preventDefault();
     const milestones=[...pdlg.querySelectorAll('.pl-m')].filter(li=>li.querySelector('input[type=checkbox]').checked)
       .map(li=>({text:li.querySelector('textarea').value.trim(), due:li.querySelector('input[type=date]').value||null})).filter(m=>m.text);
-    const out={type:$('pl-type').value, deliverable:$('pl-deliv').value.trim(), deadline:$('pl-deadline').value||'', summary:$('pl-summary').value.trim(), milestones, make_folder:!!$('pl-folder')?.checked};
+    const out={type:$('pl-type').value, role:$('pl-role').value, deliverable:$('pl-deliv').value.trim(), deadline:$('pl-deadline').value||'', summary:$('pl-summary').value.trim(), milestones, make_folder:!!$('pl-folder')?.checked};
     const res=planResolve; planResolve=null; pdlg.close(); res?.(out);
   });
   pdlg.addEventListener('close', ()=>{ if(planResolve){ const r=planResolve; planResolve=null; r(null); } });
 
   async function openFramework(id){
     const p=projOf(id); if(!p) return;
-    const r=await askFramework({name:p.name, folder:p.folder, deadline:p.deadline, deliverable:p.deliverable, type:p.type}, {id});
+    const r=await askFramework({name:p.name, folder:p.folder, deadline:p.deadline, deliverable:p.deliverable, type:p.type, role:p.role}, {id});
     if(!r) return;
     try{ const out=await db.call('POST','/api/framework',{id, ...r}); await db.refreshAll(); toast(out.notice?`Framework saved. ${out.notice}`:'Framework saved.', /^Couldn|Couldn't/.test(out.notice||'')); }
     catch(err){ toast('Could not save the framework: '+err.message, true); }
   }
+
+  // ---- close-out: deliverable, final version, loose ends, wrap-up, CLOSEOUT.md ----
+  let closeInfo=null;
+  function closedBanner(p){
+    const c=p.closeout||{};
+    return `<div class="pp-closed"><p><b>Closed out${p.closed_at?' '+esc(fmt(isoOf(p.closed_at))):''}.</b>
+      ${c.link?`Final version: <button type="button" class="linkish" data-fopen="${esc(c.link)}" title="${esc(c.link)}">${esc(baseName(c.link))}</button>`:''}
+      ${c.tag?`<span class="chip" title="Git tag on the final state">${esc(c.tag)}</span>`:''}
+      <button type="button" class="mini" data-pp-reopen>Reopen</button></p>
+      ${c.summary?`<details><summary>Wrap-up</summary><div class="pp-text">${fmtText(c.summary)}</div></details>`:''}</div>`;
+  }
+  async function openCloseout(id){
+    const p=projOf(id); if(!p) return;
+    closeInfo={id, p};
+    const d=$('close-dlg');
+    d.innerHTML=`<div class="td-body"><div class="td-head"><h3 class="sec-h">Close out ${esc(p.name)}</h3><button type="button" class="icon-btn close" data-clcancel aria-label="Cancel">${ICON.x}</button></div><p class="empty">Gathering the loose ends and drafting the wrap-up…</p></div>`;
+    if(!d.open) d.showModal();
+    let s; try{ s=await db.call('POST','/api/closeout-plan',{id}); }catch(err){ s={error:err.message}; }
+    if(!d.open) return;
+    renderCloseout({open:[], others:[], done:0, ...s});
+  }
+  function renderCloseout(s){
+    const p=closeInfo.p;
+    const fate=t=>`<select data-cl-task="${esc(t.id)}" aria-label="What happens to this task">
+        <option value="done" ${t.action==='done'?'selected':''}>Mark done</option>
+        <option value="move:inbox" ${t.action==='move'&&t.to==='inbox'?'selected':''}>Move to the Inbox</option>
+        ${s.others.map(o=>`<option value="move:${esc(o.id)}" ${t.action==='move'&&t.to===o.id?'selected':''}>Move to ${esc(o.name)}</option>`).join('')}
+        <option value="drop" ${t.action==='drop'?'selected':''}>Drop it</option></select>`;
+    const n=s.open.length;
+    $('close-dlg').innerHTML=`<form class="td-body" id="close-form">
+      <div class="td-head"><h3 class="sec-h">Close out ${esc(p.name)}</h3><button type="button" class="icon-btn close" data-clcancel aria-label="Cancel">${ICON.x}</button></div>
+      ${s.error?`<p class="warn" style="margin:0">${esc(s.error)}</p>`:''}${(s.notes||[]).map(x=>`<p class="hint" style="margin:0">${esc(x)}</p>`).join('')}
+      <div class="field"><label for="cl-deliv">Deliverable</label><input id="cl-deliv" value="${esc(s.deliverable||p.deliverable||'')}" placeholder="What this project produced"></div>
+      <div class="field"><label for="cl-link">Final version: a file, folder or link</label><div class="flink"><input id="cl-link" placeholder="~/… or https://…" spellcheck="false"><button class="mini" type="button" data-cl-pick>Choose…</button></div></div>
+      <div class="field"><label>Loose ends: ${n?`${n} open task${n>1?'s':''}`:'none'} · ${s.done} done</label>
+        ${n?`<ul class="cl-ends">${s.open.map(t=>`<li><span class="cl-text">${esc(t.text||'')}</span>${fate(t)}${t.why?`<span class="pl-dup">${esc(t.why)}</span>`:''}</li>`).join('')}</ul>`:'<p class="empty">Every task is finished.</p>'}
+      </div>
+      <div class="field"><label for="cl-summary">Wrap-up, kept with the project${s.folder?' and in CLOSEOUT.md':''}</label><textarea id="cl-summary" rows="9" placeholder="Delivered… Where it lives… What was done… Decisions worth remembering…">${esc(s.summary||'')}</textarea></div>
+      ${!s.folder?'':s.repo?`<label class="pf-check"><input type="checkbox" id="cl-commit" checked> Write CLOSEOUT.md, commit just that file, and tag the final state <code>${esc(s.tag||'closeout')}</code></label>
+          ${s.uncommitted_count?`<p class="hint" style="margin:0">${s.uncommitted_count} uncommitted change${s.uncommitted_count>1?'s':''} in the folder won't be part of it (${esc(s.uncommitted.map(l=>l.trim()).join(', '))}${s.uncommitted_count>s.uncommitted.length?', …':''}). Commit them first if they belong in the final version.</p>`:''}`
+        :'<p class="hint" style="margin:0">CLOSEOUT.md will be written to the folder. It isn\'t a git repo, so nothing is committed.</p>'}
+      <div class="td-foot"><span class="td-spacer"></span><button type="button" class="ghost" data-clcancel>Cancel</button><button type="submit" class="btn done-btn">${ICON.check}Close out project</button></div>
+    </form>`;
+    setTimeout(()=>$('cl-link')?.focus(),0);
+  }
+  const cdlg=$('close-dlg');
+  cdlg.addEventListener('click', async e=>{
+    if(e.target===cdlg || e.target.closest('[data-clcancel]')){ cdlg.close(); return; }
+    if(e.target.closest('[data-cl-pick]')){
+      try{ const r=await db.call('POST','/api/pick',{folder:false, start:closeInfo?.p.folder||''}); if(r.paths?.[0]) $('cl-link').value=r.paths[0]; }
+      catch(err){ toast('Could not open the file chooser: '+err.message, true); }
+    }
+  });
+  cdlg.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const tasks=[...cdlg.querySelectorAll('[data-cl-task]')].map(sel=>{ const [action,to]=sel.value.split(':'); return {id:sel.dataset.clTask, action, to:to||null}; });
+    const body={id:closeInfo.id, deliverable:$('cl-deliv').value.trim(), link:$('cl-link').value.trim(), summary:$('cl-summary').value.trim(), tasks, commit:!!$('cl-commit')?.checked};
+    const btn=cdlg.querySelector('button[type=submit]'), at=btn.getBoundingClientRect();
+    btn.disabled=true;
+    try{
+      const r=await db.call('POST','/api/closeout',body);
+      cdlg.close(); await db.refreshAll();
+      confetti(at.left+at.width/2, at.top+at.height/2, true); chime(true);
+      toast(r.notice||'Closed out.', /Couldn/.test(r.notice||''));
+    }catch(err){ btn.disabled=false; toast('Could not close it out: '+err.message, true); }
+  });
 
   // ---- task details dialog ----
   function openTask(id){ if(!itemOf(id)) return; dlgId=id; dlgDelete=false; renderTaskDlg(); const d=$('task-dlg'); if(!d.open) d.showModal(); ensureStats(filesOf(itemOf(id)).map(f=>f.path)); checkPrompt(id); }

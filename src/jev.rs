@@ -182,11 +182,14 @@ fn task_state(m: &Map<String, Value>, project: Option<&Map<String, Value>>) -> V
 const PROJECT_KIND: &str = "What kind of project is `project`, judging from its name, goal, notes and tasks?";
 const HAS_DELIVERABLE: &str = "Does `project` already say what it will produce: a concrete deliverable such as a \
 paper, slide deck, report, submission, dataset or tool?";
+const LEADS: &str = "Is the researcher leading `project`, responsible for seeing the whole thing through, rather than \
+contributing one part (a few analyses, figures or a section) to work that someone else leads?";
 
 /// Jev's reading of a project before a framework is proposed for it.
 pub struct ProjectReading {
     pub kind: Option<Pick>,
     pub has_deliverable: Option<f64>,
+    pub leads: Option<f64>,
 }
 
 impl ProjectReading {
@@ -198,6 +201,9 @@ impl ProjectReading {
         }
         if let Some(p) = self.has_deliverable {
             out.push_str(&format!("- It already says what it will produce: {}\n", pct(p)));
+        }
+        if let Some(p) = self.leads {
+            out.push_str(&format!("- The researcher leads it (rather than contributing a part): {}\n", pct(p)));
         }
         out
     }
@@ -400,6 +406,28 @@ impl Jev {
         Ok((patches.len(), err))
     }
 
+    /// When a project closes: for each of its `n` open tasks (`open_tasks` in `state`), the
+    /// probability it's still worth doing, and which of `others` (id, name) it belongs with now,
+    /// with "inbox" for none of them.
+    pub async fn loose_ends(&self, state: Value, n: usize, others: &[(String, String)]) -> Result<Vec<(Option<f64>, Option<Pick>)>> {
+        let n = n.min(40);
+        let mut criteria: Map<String, Value> = others.iter().take(250).map(|(id, name)| (id.clone(), json!(name))).collect();
+        criteria.insert("inbox".into(), json!("None of these projects: keep it in the Inbox"));
+        let mut q = Map::new();
+        for i in 0..n {
+            q.insert(
+                format!("still_{i}"),
+                noul(&format!("Is `open_tasks[{i}]` still worth doing now that `project` is finished, rather than already done or no longer needed?")),
+            );
+            q.insert(
+                format!("home_{i}"),
+                choice(&format!("Where does `open_tasks[{i}]` belong now that `project` is finished? The options are the ids of `other_projects`, or inbox."), criteria.clone()),
+            );
+        }
+        let a = self.ask(state, q).await?;
+        Ok((0..n).map(|i| (a.noul(&format!("still_{i}")), a.choice(&format!("home_{i}")))).collect())
+    }
+
     /// For each proposed milestone, the probability that it's the same work as one of `open` (task texts).
     pub async fn already_tasks(&self, milestones: &[String], open: &[String]) -> Result<Vec<Option<f64>>> {
         if milestones.is_empty() || open.is_empty() {
@@ -417,13 +445,15 @@ impl Jev {
         Ok((0..milestones.len()).map(|i| a.noul(&format!("same_{i}"))).collect())
     }
 
-    /// What kind of project this is (`kinds`: id and description) and whether it names a deliverable.
+    /// What kind of project this is (`kinds`: id and description), whether it names a deliverable,
+    /// and whether the researcher leads it or contributes a part.
     pub async fn read_project(&self, state: Value, kinds: &[(&str, &str)]) -> Result<ProjectReading> {
         let mut q = Map::new();
         q.insert("kind".into(), choice(PROJECT_KIND, kinds.iter().map(|(k, d)| (k.to_string(), json!(d))).collect()));
         q.insert("has_deliverable".into(), noul(HAS_DELIVERABLE));
+        q.insert("leads".into(), noul(LEADS));
         let a = self.ask(state, q).await?;
-        Ok(ProjectReading { kind: a.choice("kind"), has_deliverable: a.noul("has_deliverable") })
+        Ok(ProjectReading { kind: a.choice("kind"), has_deliverable: a.noul("has_deliverable"), leads: a.noul("leads") })
     }
 
     /// What kind of work a task is, whether it's vague, which of `files` it needs, and, from

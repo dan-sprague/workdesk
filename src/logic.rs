@@ -133,6 +133,9 @@ pub fn classify_context(projects: &[Doc], items: &[Doc]) -> String {
         if let Some(d) = s(&p, "deliverable") {
             out.push_str(&format!("  deliverable: {d}\n"));
         }
+        if s(&p, "role") == Some("contributor") {
+            out.push_str("  role: contributing a part, not leading\n");
+        }
         if let Some(c) = s(&p, "context") {
             out.push_str(&format!("  context: {c}\n"));
         }
@@ -157,7 +160,7 @@ pub fn project_facts(pid: &str, p: &Map<String, Value>, items: &[Doc]) -> Value 
     let mut out = Map::new();
     out.insert("id".into(), Value::from(pid));
     out.insert("name".into(), Value::from(s(p, "name").unwrap_or(pid)));
-    for k in ["goal", "deliverable", "context"] {
+    for k in ["goal", "role", "deliverable", "context"] {
         if let Some(v) = s(p, k) {
             out.insert(k.into(), Value::from(v.chars().take(600).collect::<String>()));
         }
@@ -484,6 +487,9 @@ pub fn brief_context(projects: &[Doc], items: &[Doc]) -> String {
         match s(&p, "deliverable") {
             Some(d) => out.push_str(&format!("  deliverable: {d}\n")),
             None => out.push_str("  deliverable: none set yet\n"),
+        }
+        if s(&p, "role") == Some("contributor") {
+            out.push_str("  role: contributing a part, not leading\n");
         }
         push_tasks(&mut out, &pid);
         out.push('\n');

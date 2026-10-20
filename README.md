@@ -120,8 +120,8 @@ On the page:
 - **Project pages**: click a project name on the Desk to open its own page — overview, its four lanes,
   notes, linked files and what's coming up. Each page has its own address (`#/p/<project id>`).
 - **Task details**: click any card, or the **›** button on a Desk row, for notes, dates, stage and files.
-- **Finishing a task**: **Mark done** in task details, the ✓ on a Board card, a Desk checkbox, or dragging
-  to Done. Confetti bursts from where you clicked, cannons fire from both corners, a short chime plays,
+- **Finishing a task**: **Mark done** in task details, or drag the card to Done on the Board. Clicking a
+  task anywhere just opens its details, so nothing gets finished by a stray click. Confetti bursts from where you clicked, cannons fire from both corners, a short chime plays,
   and you get a count of today's wins. Clearing a project, or 5 or 10 in a day, gets a bigger show.
   **Sound on/off** is at the bottom of the page; reduced motion (System Settings) gets a small burst.
 

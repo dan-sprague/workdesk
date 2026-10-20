@@ -127,9 +127,15 @@ rep("""    if(empties.length) out.push({lv:'info',type:'group',""",
     if(empties.length) out.push({lv:'info',type:'group',""")
 rep("""        ${a.plan?`<button class="mini primary" data-act="plan" data-k="${k}">Plan dates</button>`:''}""",
     """        ${a.plan?`<button class="mini primary" data-act="plan" data-k="${k}">Plan dates</button>`:''}
-        ${a.setup?`<button class="mini primary" data-act="setup" data-k="${k}">Suggest a framework</button>`:''}""")
+        ${a.setup?`<button class="mini primary" data-act="setup" data-k="${k}">Suggest a framework</button>`:''}
+        ${a.closeout?`<button class="mini primary" data-act="closeout" data-k="${k}">Close out</button>`:''}""")
 rep("""    if(b.dataset.act==='open'){ filter=a.proj;""", """    if(b.dataset.act==='setup'){ openFramework(a.id); return; }
+    if(b.dataset.act==='closeout'){ openCloseout(a.id); return; }
     if(b.dataset.act==='open'){ filter=a.proj;""")
+# a project whose every task is done should be closed out
+rep("""      if(!pi.length){ empties.push(p); continue; }""",
+    """      if(!pi.length){ empties.push(p); continue; }
+      if(!po.length){ out.push({lv:'info',type:'project',id:p.id,proj:p.id,title:p.name,detail:'Every task is done. Close it out?',closeout:true}); continue; }""")
 rep("""'<p class="empty">No projects yet. Tell Claude in the project chat what you are working on and they will appear here.</p>'""",
     """'<p class="empty">No projects yet. Use “+ New project” to add one.</p>'""")
 rep("""    if(!db){ $('projects').innerHTML='<p class="empty">Open this page from claude.ai while signed in to see your projects.</p>'; $('due-list').innerHTML=$('next-list').innerHTML='<li class="empty">Sign in on claude.ai to load your tasks.</li>'; return; }
@@ -264,8 +270,6 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
     if(su){ openFramework(su.dataset.setup); return; }
     const snd=e.target.closest('[data-sound]');
     if(snd){ setSound(!soundOn()); snd.textContent=soundOn()?'Sound on':'Sound off'; if(soundOn()) chime(false); return; }
-    const dn=e.target.closest('[data-done]');
-    if(dn){ dn.disabled=true; moveTo(dn.dataset.done, 'done'); return; }
     const fg=e.target.closest('[data-forget]');
     if(fg){ try{ await db.call('POST','/api/settings',{forget:fg.dataset.forget}); $('key-status').textContent='Removed.'; await loadStatus(); }
       catch(err){ $('key-status').textContent=err.message; } }
@@ -455,7 +459,7 @@ rep("  render();\n  (async()=>{", r"""  // ================= Local backend =====
         if(f.get('plan')==='on'){
           const fw=await askFramework({name:data.name, deadline:data.deadline, deliverable:data.deliverable, wantFolder:body.make_folder}, {project:data});
           if(!fw) return; // cancelled: the form stays as it was
-          Object.assign(body, {type:fw.type, deliverable:fw.deliverable, deadline:fw.deadline||data.deadline, summary:fw.summary, milestones:fw.milestones, make_folder:fw.make_folder});
+          Object.assign(body, {type:fw.type, role:fw.role, deliverable:fw.deliverable, deadline:fw.deadline||data.deadline, summary:fw.summary, milestones:fw.milestones, make_folder:fw.make_folder});
         }
         const r=await db.collection('projects').add(body);
         if(projMove.length||body.milestones?.length) await db.refreshAll();
@@ -479,6 +483,7 @@ rep("  <!-- TIMELINE VIEW -->", """  <!-- PROJECT PAGE -->
   <dialog id="task-dlg" class="tdlg" aria-label="Task details"></dialog>
   <dialog id="file-dlg" class="tdlg fdlg" aria-label="Where does this note go?"></dialog>
   <dialog id="plan-dlg" class="tdlg fdlg" aria-label="Project framework"></dialog>
+  <dialog id="close-dlg" class="tdlg" aria-label="Close out a project"></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="drop-hint" id="drop-hint" hidden></div>
 
@@ -498,8 +503,7 @@ rep("""    try{ await db.doc('items/'+id).update(patch); }
 rep("""    try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); }""",
     """    const was=items.find(i=>i.id===id);
     try{ await db.doc('items/'+id).update({status:'done', stage:'done', done_at:new Date().toISOString(), updated:new Date().toISOString()}); if(was) celebrate(was); }""")
-rep('<span class="card-nav">',
-    '<span class="card-nav">${st!==\'done\'?`<button class="card-done" data-done="${esc(it.id)}" aria-label="Mark done" title="Mark done">✓</button>`:\'\'}')
+
 # cards: click for details, file chips, drop target
 rep("""<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}">""",
     """<div class="card ${st==='done'?'done':''}" draggable="true" data-id="${esc(it.id)}" data-drop="items:${esc(it.id)}">""")
@@ -507,8 +511,12 @@ rep('<div class="card-txt">${esc(it.text)}</div>',
     '<div class="card-txt" data-open="${esc(it.id)}" title="Open details and files">${esc(it.text)}</div>${fileChips(it)}')
 # (card is also called as .map(card), so the project page turns tags off with a flag, not an argument)
 rep("${filter==='all'?tag(it.project):''}", "${(cardTags??filter==='all')?tag(it.project):''}")
+# desk rows: clicking a task opens its details. (On claude.ai the text was the checkbox's label, so a
+# stray click finished the task.) Finishing happens in task details or by dragging to Done.
+rep("""<input type="checkbox" id="cb-${esc(it.id)}" data-id="${esc(it.id)}" aria-label="Mark done"><label class="txt" for="cb-${esc(it.id)}"><span>${esc(it.text)}</span>${showProj?tag(it.project):''}</label>""",
+    """<span class="row-dot" aria-hidden="true"></span><button type="button" class="txt row-txt" data-open="${esc(it.id)}" title="Open details"><span>${esc(it.text)}</span>${showProj?tag(it.project):''}</button>""")
 # desk rows: file count and a details button
-rep('return `<li class="row"><input', 'return `<li class="row" data-drop="items:${esc(it.id)}"><input')
+rep('return `<li class="row"><span class="row-dot"', 'return `<li class="row" data-drop="items:${esc(it.id)}"><span class="row-dot"')
 rep('<span class="row-end">${extra||dueChip(it.due)}</span></li>',
     '<span class="row-end">${fileCount(it)}${extra||dueChip(it.due)}<button class="row-open" type="button" data-open="${esc(it.id)}" '
     'aria-label="Open details and files" title="Details and files">${ICON.open}</button></span></li>')
@@ -516,7 +524,7 @@ rep('<span class="row-end">${extra||dueChip(it.due)}</span></li>',
 rep('<div class="proj-name"><span class="swatch"></span><h3>${esc(p.name)}</h3></div>',
     '<div class="proj-name"><span class="swatch"></span><h3><a class="plink" href="${pageHref(p.id)}">${esc(p.name)}</a></h3></div>')
 rep("""<article class="proj ${p.status==='waiting'?'quiet':''}" style="--h:${h}">""",
-    """<article class="proj ${p.status==='waiting'?'quiet':''}" style="--h:${h}" data-drop="projects:${esc(p.id)}">""")
+    """<article class="proj ${p.status==='waiting'||p.status==='done'?'quiet':''}" style="--h:${h}" data-drop="projects:${esc(p.id)}">""")
 rep("$('filters').innerHTML=filterChips();", "$('filters').innerHTML=filterChips()+boardPageLink();")
 rep('<div class="compose-row"><button class="ghost" data-clear>Clear dates</button>',
     '<div class="compose-row"><button class="ghost" data-open="${esc(it.id)}">Details &amp; files</button><button class="ghost" data-clear>Clear dates</button>')

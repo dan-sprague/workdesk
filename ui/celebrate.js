@@ -90,7 +90,7 @@
   // `it` is the task as it was before it was marked done.
   function celebrate(it){
     const at=(lastPointer && Date.now()-lastPointer.t<4000)?lastPointer:{x:innerWidth/2, y:innerHeight*0.45};
-    const doneToday=items.filter(i=>i.status==='done' && i.done_at && isoOf(i.done_at)===TODAY_ISO).length;
+    const doneToday=items.filter(i=>i.status==='done' && !i.dropped && i.done_at && isoOf(i.done_at)===TODAY_ISO).length;
     const proj=it.project && it.project!=='inbox' ? projOf(it.project) : null;
     const cleared=proj && !items.some(i=>i.project===proj.id && i.status!=='done');
     const milestone=doneToday===5 || doneToday===10 || (doneToday>10 && doneToday%5===0);
@@ -99,5 +99,5 @@
     chime(big);
     const cheer=CHEERS[(Math.random()*CHEERS.length)|0];
     const count=`${doneToday} done today.`;
-    toast(cleared ? `Every task in ${proj.name} is done! ${count}` : milestone ? `${doneToday} done today. You’re on a roll!` : `${cheer} ${count}`);
+    toast(cleared ? `Every task in ${proj.name} is done! ${count} Close it out from its page.` : milestone ? `${doneToday} done today. You’re on a roll!` : `${cheer} ${count}`);
   }

@@ -2,6 +2,7 @@
 //! Binds to 127.0.0.1 only.
 
 use crate::ai::{self, Ai};
+use crate::closeout;
 use crate::config::{expand_home, tilde, Config};
 use crate::project;
 use crate::store::{check_collection, Store, COLLECTIONS};
@@ -238,6 +239,32 @@ async fn project_folder(State(app): State<App>, Json(body): Json<Value>) -> ApiR
         .map_err(|e| bad(&e.to_string()))?;
     let mut out = with_id(&c.id, c.doc);
     out["notice"] = json!(c.notice);
+    Ok(Json(out))
+}
+
+/// What the close-out window needs for a project: `{"id"}`.
+async fn closeout_plan(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which project?"))?;
+    let dirs = app.cfg.read().unwrap().progress_dirs();
+    let ai = app.ai();
+    let v = closeout::plan(&app.store, ai.as_ref(), id, &dirs).await.map_err(|e| bad(&e.to_string()))?;
+    Ok(Json(v))
+}
+
+/// Close a project out: `{id, deliverable, link, summary, tasks: [{id, action, to}], commit}`.
+async fn closeout_apply(State(app): State<App>, Json(body): Json<Value>) -> ApiResult {
+    let Value::Object(body) = body else { return Err(bad("Expected a JSON object")) };
+    let id = body.get("id").and_then(Value::as_str).ok_or_else(|| bad("Which project?"))?.to_string();
+    let link = body.get("link").and_then(Value::as_str).map(str::trim).filter(|l| !l.is_empty()).map(normalize);
+    let confirmed = closeout::Confirmed::read(&body, link);
+    let store = app.store.clone();
+    let pid = id.clone();
+    let (doc, msg) = tokio::task::spawn_blocking(move || closeout::apply(&store, &pid, confirmed))
+        .await
+        .map_err(|e| ApiError(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| bad(&e.to_string()))?;
+    let mut out = with_id(&id, doc);
+    out["notice"] = json!(msg);
     Ok(Json(out))
 }
 
@@ -513,6 +540,8 @@ pub fn router(app: App) -> Router {
         .route("/api/plan", post(plan))
         .route("/api/framework", post(framework))
         .route("/api/project-folder", post(project_folder))
+        .route("/api/closeout-plan", post(closeout_plan))
+        .route("/api/closeout", post(closeout_apply))
         .route("/api/sort-inbox", post(sort_inbox))
         .route("/api/brief", post(brief))
         .route("/api/prompt", post(draft_prompt))

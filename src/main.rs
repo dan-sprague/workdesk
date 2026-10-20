@@ -11,6 +11,7 @@
 //!   desk key <KEY>       save an API key (any supported service, or Jev)
 
 mod ai;
+mod closeout;
 mod config;
 #[cfg(target_os = "macos")]
 mod desktop;

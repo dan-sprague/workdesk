@@ -30,8 +30,7 @@ Releases are tagged `vX.Y.Z` on `main`.
   folder in VS Code. `desk prompt`. Prompts read what's already in the project folder (`scripts/`,
   `notebooks/`, commits, uncommitted changes); the task says when the folder has moved on, and
   **Update** revises the prompt for that progress while keeping your edits.
-- **Finishing a task is a party.** Mark done (task details), ✓ on Board cards, checkboxes and dragging to
-  Done all set off confetti from where you clicked plus corner cannons, a chime, and today's count;
+- **Finishing a task is a party.** Mark done (task details) and dragging to Done set off confetti from where you clicked plus corner cannons, a chime, and today's count;
   clearing a project or hitting 5 or 10 in a day gets a bigger show. Sound toggle in the footer.
 - The app no longer says DeepSeek: it's Work Desk, using whichever AI you connect. **AI keys** is at
   the top of the page, with separate boxes for the chat model and Jev.

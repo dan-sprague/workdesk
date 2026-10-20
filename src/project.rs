@@ -286,7 +286,7 @@ pub fn add_folder(store: &Store, cfg: &Config, id: &str) -> Result<Created> {
 pub fn apply_framework(store: &Store, cfg: &Config, id: &str, fields: &Map<String, Value>, milestones: &[NewTask], want_folder: bool) -> Result<Created> {
     let mut doc = store.get("projects", id)?.ok_or_else(|| anyhow!("There's no project with id {id}."))?;
     let mut patch = Map::new();
-    for k in ["type", "deliverable", "deadline", "summary"] {
+    for k in ["type", "role", "deliverable", "deadline", "summary"] {
         if let Some(v) = fields.get(k).and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty()) {
             patch.insert(k.into(), json!(v));
             doc.insert(k.into(), json!(v));

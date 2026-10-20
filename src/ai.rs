@@ -446,11 +446,17 @@ impl Ai {
 
 const FRAMEWORK_SYSTEM: &str = "You set up a project in a researcher's tracker so it has a clear finish line. \
 From what's known about the project (name, goal, overview, notes, deadline, existing tasks), propose a framework:\n\
-- type: the kind of project, one of the ids listed under Kinds.\n\
+- type: the kind of project, one of the ids listed under Kinds. This is the kind of the whole project, even \
+when the researcher only contributes to it.\n\
+- role: 'lead' if the researcher is responsible for seeing the whole project through; 'contributor' if they are \
+doing one part (a few analyses, figures or a section) of work someone else leads. If the project states a role, \
+keep it.\n\
 - deliverable: the one concrete thing the project produces, as a short phrase someone could check off when it's \
 done, in the project's own terms (for example 'Manuscript submitted to Genome Biology', '20-minute lab meeting \
 talk on the tox results', 'IND Module 2.6.6 toxicology written summary, first full draft'). If the project already \
-names one, keep it, tightened. If not, propose the most likely one and say so in assumptions.\n\
+names one, keep it, tightened. If not, propose the most likely one and say so in assumptions. For a contributor, \
+the deliverable is their part handed to whoever leads, not the whole project (for example 'Survival analyses and \
+Figure 4 sent to the first author for the liver tox paper').\n\
 - deadline: the ISO date the deliverable is due if the project states or clearly implies one; otherwise null. \
 Never invent a date.\n\
 - summary: two or three plain sentences for the project page: what it is, where it stands, what's left.\n\
@@ -458,12 +464,13 @@ Never invent a date.\n\
 stages for its kind (listed under Kinds) but fitted to this project. Each is a short, concrete task in the \
 researcher's words. Never repeat an existing task: when an existing task covers a step, leave the step out (the \
 existing task stays as it is), and leave out steps that are done. A simple task gets 1 to 3 \
-steps. If there is a deadline, give each milestone a due date spaced sensibly before it, leaving the last stretch \
+steps. For a contributor, the milestones cover only their part and end with handing it off; the usual stages \
+for the kind are context for where the project is, not steps for them. If there is a deadline, give each milestone a due date spaced sensibly before it, leaving the last stretch \
 for review; otherwise null.\n\
 - assumptions: short notes on anything you guessed.\n\
-When the message includes Jev's judgments, Jev is a calibrated classifier: use its most likely kind unless the \
-project's own words clearly say otherwise.\n\
-Respond with a JSON object only: {\"type\": string, \"deliverable\": string, \"deadline\": string or null, \
+When the message includes Jev's judgments, Jev is a calibrated classifier: use its most likely kind, and its judgment of \
+whether the researcher leads, unless the project's own words clearly say otherwise.\n\
+Respond with a JSON object only: {\"type\": string, \"role\": \"lead\" or \"contributor\", \"deliverable\": string, \"deadline\": string or null, \
 \"summary\": string, \"milestones\": [{\"task\": string, \"due\": string or null}], \"assumptions\": [string]}.";
 
 /// A proposed framework for a project, for the person to review before anything changes.
@@ -471,6 +478,8 @@ pub struct Framework {
     pub kind: String,
     /// "jev" when the kind is Jev's pick, with its probability; otherwise "model".
     pub kind_by: (&'static str, Option<f64>),
+    /// "lead" or "contributor".
+    pub role: &'static str,
     pub deliverable: Option<String>,
     pub deadline: Option<String>,
     pub summary: Option<String>,
@@ -509,6 +518,7 @@ impl Framework {
             "type": self.kind,
             "type_by": self.kind_by.0,
             "type_p": self.kind_by.1,
+            "role": self.role,
             "deliverable": self.deliverable,
             "deadline": self.deadline,
             "summary": self.summary,
@@ -530,6 +540,7 @@ fn read_framework(v: &Value, jev: Option<&jev::Pick>) -> Framework {
         repeats: vec![None; tasks.len()],
         kind,
         kind_by,
+        role: if v["role"].as_str() == Some("contributor") { "contributor" } else { "lead" },
         deliverable: text_field(v, "deliverable"),
         deadline: due_field(&json!({ "due": v["deadline"] })),
         summary: text_field(v, "summary"),
@@ -545,7 +556,7 @@ pub async fn plan_project(ai: &Ai, project: &Map<String, Value>, tasks: &[Doc]) 
     let today = today_days();
     let field = |k: &str| logic::s(project, k);
     let mut about = String::new();
-    for (k, label, n) in [("name", "Name", 200), ("goal", "Goal", 1500), ("deliverable", "Deliverable", 400), ("summary", "Overview", 2500), ("context", "Context", 1000), ("notes", "Notes", 2500), ("deadline", "Deadline", 20)] {
+    for (k, label, n) in [("name", "Name", 200), ("role", "Role", 20), ("goal", "Goal", 1500), ("deliverable", "Deliverable", 400), ("summary", "Overview", 2500), ("context", "Context", 1000), ("notes", "Notes", 2500), ("deadline", "Deadline", 20)] {
         if let Some(v) = field(k) {
             about.push_str(&format!("{label}: {}\n", v.chars().take(n).collect::<String>()));
         }
@@ -572,7 +583,7 @@ pub async fn plan_project(ai: &Ai, project: &Map<String, Value>, tasks: &[Doc]) 
     if let Some(j) = &ai.jev {
         let state = json!({
             "project": {
-                "name": field("name"), "goal": field("goal"), "deliverable": field("deliverable"), "overview": field("summary"),
+                "name": field("name"), "role": field("role"), "goal": field("goal"), "deliverable": field("deliverable"), "overview": field("summary"),
                 "context": field("context"), "deadline": field("deadline"),
                 "tasks": listed.iter().take(40).filter_map(|(_, m)| logic::s(m, "text")).collect::<Vec<_>>(),
             }
@@ -600,6 +611,48 @@ pub async fn plan_project(ai: &Ai, project: &Map<String, Value>, tasks: &[Doc]) 
         }
     }
     Ok(f)
+}
+
+const CLOSEOUT_SYSTEM: &str = "You write the close-out record for a finished research project, for the \
+researcher's own files. Plain text, short and factual, in the researcher's voice. Use exactly these headings, \
+each followed by a few lines:\n\
+Delivered: what was produced and for whom, from the deliverable and the finished work.\n\
+Where it lives: the folder, final files, repository or links that are mentioned; write [add the link] if none is.\n\
+What was done: 3 to 6 bullets (lines starting with '- ') naming the main pieces of work, from the finished tasks \
+and commits.\n\
+Decisions worth remembering: up to 3 bullets from the notes and overview, or 'None recorded.'\n\
+Use only the facts given. Don't praise, and don't invent results, numbers or links.\n\
+Respond with a JSON object only: {\"summary\": string}.";
+
+/// Draft the wrap-up record for a project being closed out.
+pub async fn closeout_summary(ai: &Ai, p: &Map<String, Value>, tasks: &[&Doc], progress: Option<&Progress>) -> Result<String> {
+    let chat = ai.writer("Writing the wrap-up")?;
+    let mut ctx = format!("Closed: {}\n", iso_from_days(today_days()));
+    for (k, label, n) in [("name", "Project", 200), ("goal", "Goal", 1500), ("deliverable", "Deliverable", 400), ("summary", "Overview", 2500), ("notes", "Notes", 3000), ("folder", "Folder", 300), ("deadline", "Deadline", 20)] {
+        if let Some(v) = logic::s(p, k) {
+            ctx.push_str(&format!("{label}: {}\n", v.chars().take(n).collect::<String>()));
+        }
+    }
+    let files: Vec<&str> = logic::file_paths(p);
+    if !files.is_empty() {
+        ctx.push_str(&format!("Linked files: {}\n", files.join(", ")));
+    }
+    let (done, open): (Vec<&&Doc>, Vec<&&Doc>) = tasks.iter().partition(|(_, m)| !logic::is_open(m));
+    ctx.push_str("\nFinished tasks:\n");
+    for (_, m) in done.iter().filter(|(_, m)| m.get("dropped").is_none()).take(60) {
+        ctx.push_str(&format!("- {}\n", logic::s(m, "text").unwrap_or("")));
+    }
+    if !open.is_empty() {
+        ctx.push_str("\nStill open (being handed off or dropped):\n");
+        for (_, m) in open.iter().take(30) {
+            ctx.push_str(&format!("- {}\n", logic::s(m, "text").unwrap_or("")));
+        }
+    }
+    if let Some(pr) = progress {
+        ctx.push_str(&pr.text());
+    }
+    let v = chat.chat_json(CLOSEOUT_SYSTEM, &ctx, 1200).await?;
+    text_field(&v, "summary").ok_or_else(|| anyhow!("The wrap-up came back empty."))
 }
 
 /// What's been done so far in a task's project folder (`dirs`, e.g. scripts/ and notebooks/).
@@ -900,13 +953,16 @@ mod tests {
             "milestones": [{"task": "Storyboard", "due": "2026-11-03"}, {"task": "Rehearse", "due": null}], "assumptions": ["Guessed the length"]});
         let jev = jev::read_pick(&json!({"choice": "presentation", "confidence": 0.7, "probabilities": {"presentation": 0.8, "report": 0.2}}));
         let f = read_framework(&v, jev.as_ref());
-        assert_eq!((f.kind.as_str(), f.kind_by), ("presentation", ("jev", Some(0.8))));
+        assert_eq!((f.kind.as_str(), f.kind_by, f.role), ("presentation", ("jev", Some(0.8)), "lead"));
         assert_eq!(f.milestones, vec![NewTask { text: "Storyboard".into(), due: Some("2026-11-03".into()) }, NewTask { text: "Rehearse".into(), due: None }]);
         assert_eq!(f.deadline.as_deref(), Some("2026-11-12"));
         assert_eq!(f.repeats, vec![None, None]);
         // an unknown kind falls back to Jev's, then to "other"; a made-up deadline string is dropped
         let f = read_framework(&json!({"type": "novel", "deadline": "soon"}), None);
         assert_eq!((f.kind.as_str(), f.kind_by.0, f.deadline), ("other", "model", None));
+        // a paper the researcher only contributes to stays a paper
+        let f = read_framework(&json!({"type": "paper", "role": "contributor"}), None);
+        assert_eq!((f.kind.as_str(), f.role), ("paper", "contributor"));
     }
 
     #[test]
